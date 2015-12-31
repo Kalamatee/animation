@@ -30,6 +30,8 @@
 #include <datatypes/animationclass.h>
 #include <cybergraphx/cybergraphics.h>
 
+#include "animationclass.h"
+
 const IPTR SupportedMethods[] =
 {
     OM_NEW,
@@ -70,20 +72,77 @@ const IPTR SupportedMethods[] =
     (~0)
 };
 
-IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
-{
-    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
-
-    return DoSuperMethodA(cl, o, msg);
-}
-
 IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
 {
+    struct Animation_Data *animd = INST_DATA (cl, g);
+
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
     switch(msg->opg_AttrID)
     {
+/*
+        need to handle the following attribs -:
+
+    case ADTA_KeyFrame:
+    case ADTA_ModeID:
+    case ADTA_Width:
+    case ADTA_Height:
+    case ADTA_Depth:
+    case ADTA_Frames:
+    case ADTA_Frame:
+    case ADTA_FramesPerSecond:
+    case ADTA_FrameIncrement:
+    case ADTA_Sample:
+    case ADTA_SampleLength:
+    case ADTA_Period:
+    case ADTA_Volume:
+    case ADTA_Cycles:
+    case ADTA_NumColors:
+    case ADTA_NumAlloc:
+    case ADTA_ColorTable:
+    case ADTA_ColorTable2:
+    case ADTA_ColorRegisters:
+    case ADTA_CRegs:
+    case ADTA_GRegs:
+    case ADTA_Allocated:
+    case PDTA_BitMapHeader:
+    case DTA_TriggerMethods:
+    case DTA_Methods:
+*/
     }
+
+    return (DoSuperMethodA (cl, g, (Msg) msg));
+}
+
+IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
+{
+    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+/*    
+    need to handle the following attribs -:
+
+    case ADTA_ModeID:
+    case ADTA_Width:
+    case ADTA_Height:
+    case ADTA_Depth:
+    case ADTA_Frames:
+    case ADTA_KeyFrame:
+    case ADTA_NumColors:
+    case ADTA_FramesPerSecond:
+    case ADTA_Remap:
+    case SDTA_Sample:
+    case SDTA_SampleLength:
+    case SDTA_Period:
+    case SDTA_Volume:
+    case DTA_TopHoriz:
+    case DTA_TotalHoriz:
+    case DTA_VisibleHoriz:
+    case DTA_TopVert:
+    case DTA_TotalVert:
+    case DTA_VisibleVert:
+    case DTA_ControlPanel:
+    case DTA_Immediate:
+*/
 
     return NULL;
 }
@@ -91,21 +150,47 @@ IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
 IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
 {
     struct Gadget *g;
+    struct Animation_Data *animd;
+    struct TagItem tdtags[] =
+    {
+        { GA_RelVerify, TRUE},
+        { GA_Width, 200},
+        { GA_Height, 15},
+        { TAG_DONE, 0}
+    };
+
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
-    
+
     g = (struct Gadget *) DoSuperMethodA(cl, o, (Msg) msg);
     if (g)
     {
-        D(bug("[animation.datatype]: %s: Created object 0x%lx\n", __PRETTY_FUNCTION__, (long)g));
+        D(bug("[animation.datatype] %s: Created object 0x%p\n", __PRETTY_FUNCTION__, g));
+
+        animd = (struct Animation_Data *) INST_DATA(cl, g);
+
+        D(bug("[animation.datatype] %s: Setting attributes.. \n", __PRETTY_FUNCTION__));
+        DT_SetMethod(cl, g, msg);
+
+        /* create a tapedeck gadget */
+        if ((animd->ad_Tapedeck = NewObjectA(NULL, "tapedeck.gadget", tdtags)) != NULL)
+        {
+            D(bug("[animation.datatype] %s: Tapedeck @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_Tapedeck));
+        }
     }
 
     return (IPTR)g;
 }
 
-IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
+IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
 {
+    struct Animation_Data *animd = INST_DATA (cl, o);
+
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
-    return NULL;
+
+    if (animd->ad_Tapedeck)
+        DisposeObject (animd->ad_Tapedeck);
+
+    return DoSuperMethodA(cl, o, msg);
 }
 
 IPTR DT_GoActiveMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
