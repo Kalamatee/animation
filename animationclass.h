@@ -10,5 +10,5 @@
 
 struct Animation_Data
 {
-       void *tmp;
+    struct Gadget *ad_Tapedeck;
 };
