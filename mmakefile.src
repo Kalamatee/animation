@@ -1,0 +1,13 @@
+#   $Id$
+include $(TOP)/config/make.cfg
+
+FILES := animationclass
+
+#MM workbench-datatypes-animation : includes linklibs
+
+USER_CFLAGS   := -DMYDEBUG
+
+%build_module mmake=workbench-datatypes-animation \
+    modname=animation modtype=datatype \
+    files=$(FILES)
+
