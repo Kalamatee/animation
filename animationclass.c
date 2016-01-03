@@ -92,10 +92,15 @@ void AnimDT_AllocColorTables(struct Animation_Data *animd, UWORD numcolors)
     if (animd->ad_NumColors > 0)
     {
         animd->ad_ColorRegs = AllocMem(1 + animd->ad_NumColors * sizeof (struct ColorRegister), MEMF_CLEAR);
+        D(bug("[animation.datatype] %s: ColorRegs @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorRegs));
         animd->ad_ColorTable = AllocMem(1 + animd->ad_NumColors * sizeof (UBYTE), MEMF_CLEAR); // shared pen table
+        D(bug("[animation.datatype] %s: ColorTable @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorTable));
         animd->ad_ColorTable2 = AllocMem(1 + animd->ad_NumColors * sizeof (UBYTE), MEMF_CLEAR);
+        D(bug("[animation.datatype] %s: ColorTable2 @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorTable2));
         animd->ad_CRegs = AllocMem(1 + animd->ad_NumColors * (sizeof (ULONG) * 3), MEMF_CLEAR); // RGB32 triples used with SetRGB32CM
+        D(bug("[animation.datatype] %s: CRegs @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_CRegs));
         animd->ad_GRegs = AllocMem(1 + animd->ad_NumColors * (sizeof (ULONG) * 3), MEMF_CLEAR); // remapped version of ad_CRegs
+        D(bug("[animation.datatype] %s: GRegs @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_GRegs));
     }
 }
 
@@ -113,15 +118,25 @@ IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
     case ADTA_ModeID:
         D(bug("[animation.datatype] %s: ADTA_ModeID\n", __PRETTY_FUNCTION__));
         break;
+
     case ADTA_Width:
         D(bug("[animation.datatype] %s: ADTA_Width\n", __PRETTY_FUNCTION__));
+        *msg->opg_Storage = (IPTR) animd->ad_BitMapHeader.bmh_Width;
+        D(bug("[animation.datatype] %s:     = %d\n", __PRETTY_FUNCTION__, *msg->opg_Storage));
         break;
+
     case ADTA_Height:
         D(bug("[animation.datatype] %s: ADTA_Height\n", __PRETTY_FUNCTION__));
+        *msg->opg_Storage = (IPTR) animd->ad_BitMapHeader.bmh_Height;
+        D(bug("[animation.datatype] %s:     = %d\n", __PRETTY_FUNCTION__, *msg->opg_Storage));
         break;
+
     case ADTA_Depth:
         D(bug("[animation.datatype] %s: ADTA_Depth\n", __PRETTY_FUNCTION__));
+        *msg->opg_Storage = (IPTR) animd->ad_BitMapHeader.bmh_Depth;
+        D(bug("[animation.datatype] %s:     = %d\n", __PRETTY_FUNCTION__, *msg->opg_Storage));
         break;
+
     case ADTA_Frames:
         D(bug("[animation.datatype] %s: ADTA_Frames\n", __PRETTY_FUNCTION__));
         break;
@@ -203,7 +218,6 @@ IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
     case DTA_Methods:
         D(bug("[animation.datatype] %s: DTA_Methods\n", __PRETTY_FUNCTION__));
         break;
-    
 
     case DTA_ControlPanel:
         D(bug("[animation.datatype] %s: DTA_ControlPanel\n", __PRETTY_FUNCTION__));
@@ -286,15 +300,22 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
         case ADTA_ModeID:
             D(bug("[animation.datatype] %s: ADTA_ModeID\n", __PRETTY_FUNCTION__));
             break;
+
         case ADTA_Width:
             D(bug("[animation.datatype] %s: ADTA_Width\n", __PRETTY_FUNCTION__));
+            animd->ad_BitMapHeader.bmh_Width = (UWORD) tag->ti_Data;
             break;
+
         case ADTA_Height:
             D(bug("[animation.datatype] %s: ADTA_Height\n", __PRETTY_FUNCTION__));
+            animd->ad_BitMapHeader.bmh_Height = (UWORD) tag->ti_Data;
             break;
+
         case ADTA_Depth:
             D(bug("[animation.datatype] %s: ADTA_Depth\n", __PRETTY_FUNCTION__));
+            animd->ad_BitMapHeader.bmh_Depth = (UBYTE) tag->ti_Data;
             break;
+
         case ADTA_Frames:
             D(bug("[animation.datatype] %s: ADTA_Frames\n", __PRETTY_FUNCTION__));
             break;
@@ -425,8 +446,11 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
 
         animd = (struct Animation_Data *) INST_DATA(cl, g);
 
-        D(bug("[animation.datatype] %s: Setting attributes.. \n", __PRETTY_FUNCTION__));
-        DT_SetMethod(cl, g, msg);
+        if (msg->ops_AttrList)
+        {
+            D(bug("[animation.datatype] %s: Setting attributes.. \n", __PRETTY_FUNCTION__));
+            DT_SetMethod(cl, g, msg);
+        }
 
         D(bug("[animation.datatype] %s: Prepare controls.. \n", __PRETTY_FUNCTION__));
         /* create a tapedeck gadget */
