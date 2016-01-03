@@ -114,9 +114,12 @@ IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
     {
     case ADTA_KeyFrame:
         D(bug("[animation.datatype] %s: ADTA_KeyFrame\n", __PRETTY_FUNCTION__));
+        *msg->opg_Storage = (IPTR) animd->ad_KeyFrame;
         break;
+
     case ADTA_ModeID:
         D(bug("[animation.datatype] %s: ADTA_ModeID\n", __PRETTY_FUNCTION__));
+        *msg->opg_Storage = (IPTR) animd->ad_ModeID;
         break;
 
     case ADTA_Width:
@@ -139,13 +142,18 @@ IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
 
     case ADTA_Frames:
         D(bug("[animation.datatype] %s: ADTA_Frames\n", __PRETTY_FUNCTION__));
+        *msg->opg_Storage = (IPTR) animd->ad_Frames;
         break;
+
     case ADTA_Frame:
         D(bug("[animation.datatype] %s: ADTA_Frame\n", __PRETTY_FUNCTION__));
         break;
+
     case ADTA_FramesPerSecond:
         D(bug("[animation.datatype] %s: ADTA_FramesPerSecond\n", __PRETTY_FUNCTION__));
+        *msg->opg_Storage = (IPTR) animd->ad_FramesPerSec;
         break;
+
     case ADTA_FrameIncrement:
         D(bug("[animation.datatype] %s: ADTA_FrameIncrement\n", __PRETTY_FUNCTION__));
         break;
@@ -298,29 +306,33 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
         switch(tag->ti_Tag)
         {
         case ADTA_ModeID:
-            D(bug("[animation.datatype] %s: ADTA_ModeID\n", __PRETTY_FUNCTION__));
+            D(bug("[animation.datatype] %s: ADTA_ModeID (%08x)\n", __PRETTY_FUNCTION__, tag->ti_Data));
+            animd->ad_ModeID = (IPTR) tag->ti_Data;
             break;
 
         case ADTA_Width:
-            D(bug("[animation.datatype] %s: ADTA_Width\n", __PRETTY_FUNCTION__));
+            D(bug("[animation.datatype] %s: ADTA_Width (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
             animd->ad_BitMapHeader.bmh_Width = (UWORD) tag->ti_Data;
             break;
 
         case ADTA_Height:
-            D(bug("[animation.datatype] %s: ADTA_Height\n", __PRETTY_FUNCTION__));
+            D(bug("[animation.datatype] %s: ADTA_Height (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
             animd->ad_BitMapHeader.bmh_Height = (UWORD) tag->ti_Data;
             break;
 
         case ADTA_Depth:
-            D(bug("[animation.datatype] %s: ADTA_Depth\n", __PRETTY_FUNCTION__));
+            D(bug("[animation.datatype] %s: ADTA_Depth (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
             animd->ad_BitMapHeader.bmh_Depth = (UBYTE) tag->ti_Data;
             break;
 
         case ADTA_Frames:
-            D(bug("[animation.datatype] %s: ADTA_Frames\n", __PRETTY_FUNCTION__));
+            D(bug("[animation.datatype] %s: ADTA_Frames (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
+            animd->ad_Frames = (UWORD) tag->ti_Data;
             break;
+
         case ADTA_KeyFrame:
-            D(bug("[animation.datatype] %s: ADTA_KeyFrame\n", __PRETTY_FUNCTION__));
+            D(bug("[animation.datatype] %s: ADTA_KeyFrame (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
+            animd->ad_KeyFrame = (UWORD) tag->ti_Data;
             break;
 
         case ADTA_NumColors:
@@ -329,8 +341,10 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
             break;
 
         case ADTA_FramesPerSecond:
-            D(bug("[animation.datatype] %s: ADTA_FramesPerSecond\n", __PRETTY_FUNCTION__));
+            D(bug("[animation.datatype] %s: ADTA_FramesPerSecond (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
+            animd->ad_FramesPerSec = (UWORD) tag->ti_Data;
             break;
+
         case SDTA_Sample:
             D(bug("[animation.datatype] %s: SDTA_Sample\n", __PRETTY_FUNCTION__));
             break;
@@ -343,23 +357,35 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
         case SDTA_Volume:
             D(bug("[animation.datatype] %s: SDTA_Volume\n", __PRETTY_FUNCTION__));
             break;
+
         case DTA_TopHoriz:
-            D(bug("[animation.datatype] %s: DTA_TopHoriz\n", __PRETTY_FUNCTION__));
+            D(bug("[animation.datatype] %s: DTA_TopHoriz (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
+            animd->ad_HorizTop = (UWORD) tag->ti_Data;
             break;
+
         case DTA_TotalHoriz:
-            D(bug("[animation.datatype] %s: DTA_TotalHoriz\n", __PRETTY_FUNCTION__));
+            D(bug("[animation.datatype] %s: DTA_TotalHoriz (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
+            animd->ad_HorizTotal = (UWORD) tag->ti_Data;
             break;
+
         case DTA_VisibleHoriz:
-            D(bug("[animation.datatype] %s: DTA_VisibleHoriz\n", __PRETTY_FUNCTION__));
+            D(bug("[animation.datatype] %s: DTA_VisibleHoriz (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
+            animd->ad_HorizVis = (UWORD) tag->ti_Data;
             break;
+
         case DTA_TopVert:
-            D(bug("[animation.datatype] %s: DTA_TopVert\n", __PRETTY_FUNCTION__));
+            D(bug("[animation.datatype] %s: DTA_TopVert (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
+            animd->ad_VertTop = (UWORD) tag->ti_Data;
             break;
+
         case DTA_TotalVert:
-            D(bug("[animation.datatype] %s: DTA_TotalVert\n", __PRETTY_FUNCTION__));
+            D(bug("[animation.datatype] %s: DTA_TotalVert (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
+            animd->ad_VertTotal = (UWORD) tag->ti_Data;
             break;
+
         case DTA_VisibleVert:
-            D(bug("[animation.datatype] %s: DTA_VisibleVert\n", __PRETTY_FUNCTION__));
+            D(bug("[animation.datatype] %s: DTA_VisibleVert (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
+            animd->ad_VertVis = (UWORD) tag->ti_Data;
             break;
 
         case DTA_ControlPanel:

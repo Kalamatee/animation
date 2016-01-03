@@ -19,14 +19,25 @@
 
 struct Animation_Data
 {
+    ULONG                       ad_Flags;               /* object control flags */
+    UWORD                       ad_Frames;             /* # of frames */
+    UWORD                       ad_FramesPerSec;
+    UWORD                       ad_KeyFrame;
+    UWORD                       ad_pad0;
+    UWORD                       ad_VertTop;
+    UWORD                       ad_VertTotal;
+    UWORD                       ad_VertVis;
+    UWORD                       ad_HorizTop;
+    UWORD                       ad_HorizTotal;
+    UWORD                       ad_HorizVis;
+    IPTR                        ad_ModeID;
+    struct BitMapHeader         ad_BitMapHeader;        /* objects embedded bitmap header */
     struct Gadget               *ad_Tapedeck;
+    UWORD                       ad_NumColors;
+    UWORD                       ad_NumAlloc;
     struct ColorRegister        *ad_ColorRegs;
     UBYTE			*ad_ColorTable;
     UBYTE			*ad_ColorTable2;
     ULONG			*ad_CRegs;
     ULONG                       *ad_GRegs;
-    UWORD                       ad_NumColors;
-    UWORD                       ad_NumAlloc;
-    ULONG                       ad_Flags;               /* object control flags */
-    struct BitMapHeader         ad_BitMapHeader;        /* objects embedded bitmap header */
 };
