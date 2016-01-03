@@ -263,9 +263,11 @@ IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
             *msg->opg_Storage = (IPTR) FALSE;
         break;
 #endif
+    default:
+        return DoSuperMethodA (cl, g, (Msg) msg);
     }
 
-    return (DoSuperMethodA (cl, g, (Msg) msg));
+    return (IPTR)TRUE;
 }
 
 IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
