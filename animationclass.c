@@ -84,11 +84,17 @@ struct DTMethod SupportedTriggerMethods[] =
     { NULL,                     NULL,                   0               },
 };
 
-void AnimDT_AllocColorTables(struct Animation_Data *animd, UWORD numcolors)
+/*** PRIVATE METHODS ***/
+IPTR DT_AllocColorTables(struct IClass *cl, struct Gadget *g, struct privAllocColorTables *msg)
 {
-    if ((numcolors != animd->ad_NumColors) && 
+    struct Animation_Data *animd = INST_DATA (cl, g);
+
+    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    if ((msg->NumColors != animd->ad_NumColors) && 
         (animd->ad_NumColors > 0))
     {
+        D(bug("[animation.datatype] %s: free existing tables..\n", __PRETTY_FUNCTION__));
         if (animd->ad_ColorRegs)
             FreeMem(animd->ad_ColorRegs, 1 + animd->ad_NumColors * sizeof (struct ColorRegister));
         if (animd->ad_ColorTable)
@@ -100,7 +106,7 @@ void AnimDT_AllocColorTables(struct Animation_Data *animd, UWORD numcolors)
         if (animd->ad_GRegs)
             FreeMem(animd->ad_GRegs, 1 + animd->ad_NumColors * (sizeof (ULONG) * 3));
     }
-    animd->ad_NumColors = numcolors;
+    animd->ad_NumColors = msg->NumColors;
     if (animd->ad_NumColors > 0)
     {
         animd->ad_ColorRegs = AllocMem(1 + animd->ad_NumColors * sizeof (struct ColorRegister), MEMF_CLEAR);
@@ -114,8 +120,43 @@ void AnimDT_AllocColorTables(struct Animation_Data *animd, UWORD numcolors)
         animd->ad_GRegs = AllocMem(1 + animd->ad_NumColors * (sizeof (ULONG) * 3), MEMF_CLEAR); // remapped version of ad_CRegs
         D(bug("[animation.datatype] %s: GRegs @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_GRegs));
     }
+
+    return 1;
 }
 
+IPTR DT_AllocBuffer(struct IClass *cl, struct Gadget *g, struct privAllocBuffer *msg)
+{
+    struct Animation_Data *animd = INST_DATA (cl, g);
+
+    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    if (!animd->ad_FrameBuffer)
+    {
+        animd->ad_FrameBuffer = AllocBitMap(animd->ad_BitMapHeader.bmh_Width, animd->ad_BitMapHeader.bmh_Height, msg->Depth,
+				      BMF_CLEAR, msg->Friend);
+
+        D(bug("[animation.datatype] %s: Frame Buffer @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_FrameBuffer));
+        D(bug("[animation.datatype] %s:     %dx%dx%d\n", __PRETTY_FUNCTION__, animd->ad_BitMapHeader.bmh_Width, animd->ad_BitMapHeader.bmh_Height, msg->Depth));
+
+        if (animd->ad_KeyFrame)
+        {
+            BltBitMap(animd->ad_KeyFrame, 0, 0, animd->ad_FrameBuffer, 0, 0, animd->ad_BitMapHeader.bmh_Width, animd->ad_BitMapHeader.bmh_Height, 0xC0, 0xFF, NULL);
+        }
+    }
+
+    return (IPTR)animd->ad_FrameBuffer;
+}
+
+IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, Msg msg)
+{
+    struct Animation_Data *animd = INST_DATA (cl, g);
+
+    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    return 1;
+}
+
+/*** PUBLIC METHODS ***/
 IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
 {
     struct Animation_Data *animd = INST_DATA (cl, g);
@@ -352,7 +393,7 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
 
         case ADTA_NumColors:
             D(bug("[animation.datatype] %s: ADTA_NumColors (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
-            AnimDT_AllocColorTables(animd, (UWORD)tag->ti_Data);
+            DoMethod((Object *)g, PRIVATE_ALLOCCOLORTABLES, tag->ti_Data);
             break;
 
         case ADTA_FramesPerSecond:
@@ -624,20 +665,41 @@ IPTR DT_Render(struct IClass *cl, struct Gadget *g, struct gpRender *msg)
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
+    GetAttr(DTA_Domain, (Object *)g, (IPTR *)&gadBox);
+
+    if (gadBox->Width > animd->ad_BitMapHeader.bmh_Width)
+        fillwidth = animd->ad_BitMapHeader.bmh_Width;
+    else
+        fillwidth = gadBox->Width;
+        
+    if (gadBox->Height > animd->ad_BitMapHeader.bmh_Height)
+        fillheight = animd->ad_BitMapHeader.bmh_Height;
+    else
+        fillheight = gadBox->Height;
+
+    if (!animd->ad_FrameBuffer)
+    {
+        IPTR bmdepth;
+
+        bmdepth = GetBitMapAttr(msg->gpr_RPort->BitMap, BMA_DEPTH);
+        if (bmdepth < animd->ad_BitMapHeader.bmh_Depth)
+            bmdepth = animd->ad_BitMapHeader.bmh_Height;
+
+        DoMethod((Object *)g, PRIVATE_ALLOCBUFFER, msg->gpr_RPort->BitMap, bmdepth);
+
+        if ((animd->ad_KeyFrame) &&  (animd->ad_Flags & ANIMDF_REMAP))
+        {
+            DoMethod((Object *)g, PRIVATE_REMAPBUFFER);
+        }
+    }
+
+    if (animd->ad_FrameBuffer)
+    {
+        BltBitMapRastPort(animd->ad_FrameBuffer, 0, 0, msg->gpr_RPort, gadBox->Left, gadBox->Top, fillwidth, fillheight, 0xC0);
+    }
+    else
     {
         // for now fill the animations area
-        GetAttr(DTA_Domain, (Object *)g, (IPTR *)&gadBox);
-
-        if (gadBox->Width > animd->ad_BitMapHeader.bmh_Width)
-            fillwidth = animd->ad_BitMapHeader.bmh_Width;
-        else
-            fillwidth = gadBox->Width;
-            
-        if (gadBox->Height > animd->ad_BitMapHeader.bmh_Height)
-            fillheight = animd->ad_BitMapHeader.bmh_Height;
-        else
-            fillheight = gadBox->Height;
-
         SetRPAttrs(msg->gpr_RPort, RPTAG_FgColor, 0xEE8888, TAG_DONE );
         RectFill(msg->gpr_RPort, gadBox->Left, gadBox->Top , gadBox->Left + fillwidth, gadBox->Top + fillheight);
     }
