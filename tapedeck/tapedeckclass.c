@@ -24,7 +24,7 @@
 #include <proto/alib.h>
 
 #ifndef DEBUG
-#   define DEBUG 0
+#   define DEBUG 1
 #endif
 #include <aros/debug.h>
 
@@ -52,7 +52,9 @@ Object *TapeDeck__OM_NEW(Class *cl, Class *rootcl, struct opSet *msg)
 	{ IA_FrameType	, FRAME_BUTTON	},
         { TAG_DONE	, 0UL 		}
     };
-    
+
+    D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
+
     o = (Object *)DoSuperMethodA(cl, (Object *)rootcl, (Msg)msg);
     if (!o)
         return NULL;
@@ -80,7 +82,9 @@ Object *TapeDeck__OM_NEW(Class *cl, Class *rootcl, struct opSet *msg)
 VOID TapeDeck__OM_DISPOSE(Class *cl, Object *o, Msg msg)
 {
     struct TapeDeckData *data = INST_DATA(cl, o);
-    
+
+    D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
+
     if (EG(o)->GadgetRender)
         DisposeObject(EG(o)->GadgetRender);
 
@@ -93,6 +97,8 @@ IPTR TapeDeck__OM_GET(Class *cl, Object *o, struct opGet *msg)
 {
     struct TapeDeckData *data = INST_DATA(cl, o);
     IPTR    	     retval = 1;
+
+    D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
 
     switch(msg->opg_AttrID)
     {
@@ -114,6 +120,8 @@ IPTR TapeDeck__OM_SET(Class *cl, Object *o, struct opSet *msg)
     BOOL    	    	  rerender = FALSE;
     IPTR    	    	  result;
 
+    D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
+
     result = DoSuperMethodA(cl, o, (Msg)msg);
 
     while((tag = NextTagItem(&taglist)))
@@ -123,10 +131,26 @@ IPTR TapeDeck__OM_SET(Class *cl, Object *o, struct opSet *msg)
 	    case GA_Disabled:
 		rerender = TRUE;
 		break;
+
+            D(
+            case GA_Left:
+                bug("[tapedeck.gadget] %s: GA_Left - %d\n", __PRETTY_FUNCTION__, tag->ti_Data);
+                break;
+
+            case GA_Top:
+                bug("[tapedeck.gadget] %s: GA_Top - %d\n", __PRETTY_FUNCTION__, tag->ti_Data);
+                break;
+
+            case GA_Width:
+                bug("[tapedeck.gadget] %s: GA_Width - %d\n", __PRETTY_FUNCTION__, tag->ti_Data);
+                break;
+
+            case GA_Height:
+                bug("[tapedeck.gadget] %s: GA_Height - %d\n", __PRETTY_FUNCTION__, tag->ti_Data);
+                break;
+            )
         }
     }
-
-    /* SDuvan: Removed test (cl == OCLASS(o)) */
 
     if(rerender)
     {
@@ -146,12 +170,21 @@ IPTR TapeDeck__OM_SET(Class *cl, Object *o, struct opSet *msg)
 
 /***********************************************************************************/
 
+IPTR TapeDeck__GM_LAYOUT(Class *cl, Object *o, struct gpLayout *msg)
+{
+    D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
+
+    return 1;
+}
+
 VOID TapeDeck__GM_RENDER(Class *cl, Object *o, struct gpRender *msg)
 {
     struct TapeDeckData *data = INST_DATA(cl, o);
 
+    D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
+
     /* Full redraw: clear and draw border */
-    DrawImageState(msg->gpr_RPort,IM(EG(o)->GadgetRender),
+    DrawImageState(msg->gpr_RPort, IM(EG(o)->GadgetRender),
                    EG(o)->LeftEdge, EG(o)->TopEdge,
                    EG(o)->Flags&GFLG_SELECTED?IDS_SELECTED:IDS_NORMAL,
                    msg->gpr_GInfo->gi_DrInfo);
@@ -163,9 +196,11 @@ IPTR TapeDeck__GM_GOACTIVE(Class *cl, Object *o, struct gpInput *msg)
 {	
     struct RastPort 	*rport;
     IPTR    	    	retval;
-    
+
+    D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
+
     EG(o)->Flags |= GFLG_SELECTED;
-    
+
     rport = ObtainGIRPort(msg->gpi_GInfo);
     if (rport)
     {
@@ -187,6 +222,8 @@ IPTR TapeDeck__GM_HANDLEINPUT(Class *cl, Object *o, struct gpInput *msg)
     struct RastPort 	*rport;
     struct TapeDeckData 	*data;
     IPTR    	    	retval = GMR_MEACTIVE;
+
+    D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
 
     data = INST_DATA(cl, o);
     
@@ -260,6 +297,8 @@ IPTR TapeDeck__GM_HANDLEINPUT(Class *cl, Object *o, struct gpInput *msg)
 IPTR TapeDeck__GM_GOINACTIVE(Class *cl, Object *o, struct gpGoInactive *msg)
 {
     struct RastPort *rport;
+
+    D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
 
     EG(o)->Flags &= ~GFLG_SELECTED;
 
