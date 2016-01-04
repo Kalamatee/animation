@@ -45,14 +45,6 @@ Object *TapeDeck__OM_NEW(Class *cl, Class *rootcl, struct opSet *msg)
     struct TextAttr 	*tattr;
     Object  	    	*o;
 
-    struct TagItem  	frametags[] = {
-        { IA_Width	, 200 		},
-        { IA_Height	, 16 		},
-        { IA_EdgesOnly	, FALSE		},
-	{ IA_FrameType	, FRAME_BUTTON	},
-        { TAG_DONE	, 0UL 		}
-    };
-
     D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
 
     o = (Object *)DoSuperMethodA(cl, (Object *)rootcl, (Msg)msg);
@@ -65,14 +57,6 @@ Object *TapeDeck__OM_NEW(Class *cl, Class *rootcl, struct opSet *msg)
     tattr = (struct TextAttr *)GetTagData(GA_TextAttr, (IPTR) NULL, msg->ops_AttrList);
     if (tattr) data->font = OpenFont(tattr);
 #endif
-
-    EG(o)->GadgetRender = NewObjectA(NULL, FRAMEICLASS, frametags);
-    if (!EG(o)->GadgetRender)
-    {
-        IPTR methodid = OM_DISPOSE;
-        CoerceMethodA(cl, o, (Msg)&methodid);
-        return NULL;
-    }
 
     return o;
 }
@@ -102,6 +86,10 @@ IPTR TapeDeck__OM_GET(Class *cl, Object *o, struct opGet *msg)
 
     switch(msg->opg_AttrID)
     {
+        case GA_Height:
+            *msg->opg_Storage = 20;
+            break;
+
 	default:
 	    retval = DoSuperMethodA(cl, o, (Msg)msg);
 	    break;
@@ -172,22 +160,77 @@ IPTR TapeDeck__OM_SET(Class *cl, Object *o, struct opSet *msg)
 
 IPTR TapeDeck__GM_LAYOUT(Class *cl, Object *o, struct gpLayout *msg)
 {
+    struct TagItem  	frametags[] = {
+        { IA_Width	, 0 		},
+        { IA_Height	, 0 		},
+        { IA_EdgesOnly	, FALSE		},
+	{ IA_FrameType	, FRAME_BUTTON	},
+        { TAG_DONE	, 0UL 		}
+    };
+
     D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
+
+    GetAttr(GA_Width, o, (IPTR *)&frametags[0].ti_Data);
+    GetAttr(GA_Height, o, (IPTR *)&frametags[1].ti_Data);
+    
+    EG(o)->GadgetRender = NewObjectA(NULL, FRAMEICLASS, frametags);
 
     return 1;
 }
 
-VOID TapeDeck__GM_RENDER(Class *cl, Object *o, struct gpRender *msg)
+IPTR TapeDeck__GM_RENDER(Class *cl, Object *o, struct gpRender *msg)
 {
     struct TapeDeckData *data = INST_DATA(cl, o);
+    LONG rend_x, rend_y;
 
     D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
 
-    /* Full redraw: clear and draw border */
-    DrawImageState(msg->gpr_RPort, IM(EG(o)->GadgetRender),
-                   EG(o)->LeftEdge, EG(o)->TopEdge,
-                   EG(o)->Flags&GFLG_SELECTED?IDS_SELECTED:IDS_NORMAL,
-                   msg->gpr_GInfo->gi_DrInfo);
+    if (EG(o)->GadgetRender)
+    {
+        /* Full redraw: clear and draw border */
+        DrawImageState(msg->gpr_RPort, IM(EG(o)->GadgetRender),
+                       EG(o)->LeftEdge, EG(o)->TopEdge,
+                       EG(o)->Flags&GFLG_SELECTED?IDS_SELECTED:IDS_NORMAL,
+                       msg->gpr_GInfo->gi_DrInfo);
+    }
+
+    SetAPen(msg->gpr_RPort, msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHADOWPEN]);
+  
+    rend_x = EG(o)->Width >> 1;
+
+    {
+        /* Play */
+
+        rend_y = EG(o)->TopEdge + ((EG(o)->Height - 9) >> 1);
+
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x, rend_y , EG(o)->LeftEdge + rend_x + 1, rend_y + 10);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 2, rend_y + 1 , EG(o)->LeftEdge + rend_x + 3, rend_y + 9);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 4, rend_y + 2 , EG(o)->LeftEdge + rend_x + 5, rend_y + 8);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 6, rend_y + 3 , EG(o)->LeftEdge + rend_x + 7, rend_y + 7);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 8, rend_y + 4 , EG(o)->LeftEdge + rend_x + 9, rend_y + 6);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 10, rend_y + 5 , EG(o)->LeftEdge + rend_x + 11, rend_y + 5);
+    }
+
+    {
+        /* volume control */
+
+        rend_x = EG(o)->LeftEdge + EG(o)->Width - 17;
+        rend_y = EG(o)->TopEdge + ((EG(o)->Height - 9) >> 1);
+
+        RectFill(msg->gpr_RPort, rend_x + 1, rend_y + 4, rend_x + 4, rend_y + 6);
+        RectFill(msg->gpr_RPort, rend_x + 5, rend_y + 3, rend_x + 5, rend_y + 7);
+        RectFill(msg->gpr_RPort, rend_x + 6, rend_y + 1, rend_x + 6, rend_y + 9);
+        RectFill(msg->gpr_RPort, rend_x + 13, rend_y,     rend_x + 13, rend_y + 1);
+        RectFill(msg->gpr_RPort, rend_x + 14, rend_y + 2, rend_x + 14, rend_y + 8);
+        RectFill(msg->gpr_RPort, rend_x + 13, rend_y + 9, rend_x + 13, rend_y + 10);
+        RectFill(msg->gpr_RPort, rend_x + 11, rend_y + 2, rend_x + 11, rend_y + 3);
+        RectFill(msg->gpr_RPort, rend_x + 12, rend_y + 4, rend_x + 12, rend_y + 6);
+        RectFill(msg->gpr_RPort, rend_x + 11, rend_y + 7, rend_x + 11, rend_y + 8);
+        RectFill(msg->gpr_RPort, rend_x + 9,  rend_y + 4, rend_x + 9,  rend_y + 6);
+        RectFill(msg->gpr_RPort, rend_x + 10, rend_y + 5, rend_x + 10, rend_y + 5);
+    }
+
+    return 1;
 }
 
 /***********************************************************************************/
