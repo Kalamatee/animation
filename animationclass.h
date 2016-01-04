@@ -40,16 +40,21 @@ struct Animation_Data
     struct Gadget               *ad_Tapedeck;
     UWORD                       ad_NumColors;
     UWORD                       ad_NumAlloc;
+    struct Window               *ad_Window;
+    struct ColorMap             *ad_ColorMap;
     struct ColorRegister        *ad_ColorRegs;
-    UBYTE			*ad_ColorTable;
-    UBYTE			*ad_ColorTable2;
     ULONG			*ad_CRegs;
     ULONG                       *ad_GRegs;
+    UBYTE			*ad_ColorTable;
+    UBYTE			*ad_ColorTable2;
+    UBYTE			*ad_Allocated;          /* pens we have actually allocated      */
 };
 
 #define PRIVATE_ALLOCCOLORTABLES        (0x0808000000 + 1)
-#define PRIVATE_ALLOCBUFFER             (0x0808000000 + 2)             
-#define PRIVATE_REMAPBUFFER             (0x0808000000 + 3)
+#define PRIVATE_FREECOLORTABLES         (0x0808000000 + 2) 
+#define PRIVATE_FREEPENS                (0x0808000000 + 3)             
+#define PRIVATE_ALLOCBUFFER             (0x0808000000 + 4)
+#define PRIVATE_REMAPBUFFER             (0x0808000000 + 5)
 
 struct privAllocColorTables
 {

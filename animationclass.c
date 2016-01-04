@@ -85,6 +85,54 @@ struct DTMethod SupportedTriggerMethods[] =
 };
 
 /*** PRIVATE METHODS ***/
+IPTR DT_FreePens(struct IClass *cl, struct Gadget *g, Msg msg)
+{
+    struct Animation_Data *animd = INST_DATA (cl, g);
+    int i;
+
+    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    if ((animd->ad_ColorMap) && (animd->ad_NumAlloc > 0))
+    {
+        D(bug("[animation.datatype] %s: attempting to free %d pens\n", __PRETTY_FUNCTION__, animd->ad_NumAlloc));
+        D(bug("[animation.datatype] %s: colormap @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorMap));
+        for (i = animd->ad_NumAlloc - 1; i >= 0; i--)
+        {
+            D(bug("[animation.datatype] %s: freeing pen %d\n", __PRETTY_FUNCTION__, animd->ad_Allocated[i]));
+            ReleasePen(animd->ad_ColorMap, animd->ad_Allocated[i]);
+        }
+
+        animd->ad_NumAlloc = 0;
+    }
+
+    return 1;
+}
+
+IPTR DT_FreeColorTables(struct IClass *cl, struct Gadget *g, Msg msg)
+{
+    struct Animation_Data *animd = INST_DATA (cl, g);
+
+    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    if (animd->ad_ColorRegs)
+        FreeMem(animd->ad_ColorRegs, 1 + animd->ad_NumColors * sizeof (struct ColorRegister));
+    if (animd->ad_ColorTable)
+        FreeMem(animd->ad_ColorTable, 1 + animd->ad_NumColors * sizeof (UBYTE));
+    if (animd->ad_ColorTable2)
+        FreeMem(animd->ad_ColorTable2, 1 + animd->ad_NumColors * sizeof (UBYTE));
+    if (animd->ad_Allocated)
+    {
+        DoMethod((Object *)g, PRIVATE_FREEPENS);
+        FreeMem(animd->ad_Allocated, 1 + animd->ad_NumColors * sizeof (UBYTE));
+    }
+    if (animd->ad_CRegs)
+        FreeMem(animd->ad_CRegs, 1 + animd->ad_NumColors * (sizeof (ULONG) * 3));
+    if (animd->ad_GRegs)
+        FreeMem(animd->ad_GRegs, 1 + animd->ad_NumColors * (sizeof (ULONG) * 3));
+
+    return 1;
+}
+
 IPTR DT_AllocColorTables(struct IClass *cl, struct Gadget *g, struct privAllocColorTables *msg)
 {
     struct Animation_Data *animd = INST_DATA (cl, g);
@@ -94,17 +142,7 @@ IPTR DT_AllocColorTables(struct IClass *cl, struct Gadget *g, struct privAllocCo
     if ((msg->NumColors != animd->ad_NumColors) && 
         (animd->ad_NumColors > 0))
     {
-        D(bug("[animation.datatype] %s: free existing tables..\n", __PRETTY_FUNCTION__));
-        if (animd->ad_ColorRegs)
-            FreeMem(animd->ad_ColorRegs, 1 + animd->ad_NumColors * sizeof (struct ColorRegister));
-        if (animd->ad_ColorTable)
-            FreeMem(animd->ad_ColorTable, 1 + animd->ad_NumColors * sizeof (UBYTE));
-        if (animd->ad_ColorTable2)
-            FreeMem(animd->ad_ColorTable2, 1 + animd->ad_NumColors * sizeof (UBYTE));
-        if (animd->ad_CRegs)
-            FreeMem(animd->ad_CRegs, 1 + animd->ad_NumColors * (sizeof (ULONG) * 3));
-        if (animd->ad_GRegs)
-            FreeMem(animd->ad_GRegs, 1 + animd->ad_NumColors * (sizeof (ULONG) * 3));
+        DoMethod((Object *)g, PRIVATE_FREECOLORTABLES);
     }
     animd->ad_NumColors = msg->NumColors;
     if (animd->ad_NumColors > 0)
@@ -115,6 +153,8 @@ IPTR DT_AllocColorTables(struct IClass *cl, struct Gadget *g, struct privAllocCo
         D(bug("[animation.datatype] %s: ColorTable @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorTable));
         animd->ad_ColorTable2 = AllocMem(1 + animd->ad_NumColors * sizeof (UBYTE), MEMF_CLEAR);
         D(bug("[animation.datatype] %s: ColorTable2 @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorTable2));
+        animd->ad_Allocated = AllocMem(1 + animd->ad_NumColors * sizeof (UBYTE), MEMF_CLEAR);
+        D(bug("[animation.datatype] %s: Allocated pens Array @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_Allocated));
         animd->ad_CRegs = AllocMem(1 + animd->ad_NumColors * (sizeof (ULONG) * 3), MEMF_CLEAR); // RGB32 triples used with SetRGB32CM
         D(bug("[animation.datatype] %s: CRegs @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_CRegs));
         animd->ad_GRegs = AllocMem(1 + animd->ad_NumColors * (sizeof (ULONG) * 3), MEMF_CLEAR); // remapped version of ad_CRegs
@@ -130,18 +170,19 @@ IPTR DT_AllocBuffer(struct IClass *cl, struct Gadget *g, struct privAllocBuffer 
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
-    if (!animd->ad_FrameBuffer)
+    if (animd->ad_FrameBuffer)
+        FreeBitMap(animd->ad_FrameBuffer);
+
+    animd->ad_FrameBuffer = AllocBitMap(animd->ad_BitMapHeader.bmh_Width, animd->ad_BitMapHeader.bmh_Height, msg->Depth,
+                                  BMF_CLEAR, msg->Friend);
+
+    D(bug("[animation.datatype] %s: Frame Buffer @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_FrameBuffer));
+    D(bug("[animation.datatype] %s:     %dx%dx%d\n", __PRETTY_FUNCTION__, animd->ad_BitMapHeader.bmh_Width, animd->ad_BitMapHeader.bmh_Height, msg->Depth));
+
+    if (animd->ad_KeyFrame)
     {
-        animd->ad_FrameBuffer = AllocBitMap(animd->ad_BitMapHeader.bmh_Width, animd->ad_BitMapHeader.bmh_Height, msg->Depth,
-				      BMF_CLEAR, msg->Friend);
-
-        D(bug("[animation.datatype] %s: Frame Buffer @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_FrameBuffer));
-        D(bug("[animation.datatype] %s:     %dx%dx%d\n", __PRETTY_FUNCTION__, animd->ad_BitMapHeader.bmh_Width, animd->ad_BitMapHeader.bmh_Height, msg->Depth));
-
-        if (animd->ad_KeyFrame)
-        {
-            BltBitMap(animd->ad_KeyFrame, 0, 0, animd->ad_FrameBuffer, 0, 0, animd->ad_BitMapHeader.bmh_Width, animd->ad_BitMapHeader.bmh_Height, 0xC0, 0xFF, NULL);
-        }
+        BltBitMap(animd->ad_KeyFrame, 0, 0, animd->ad_FrameBuffer, 0, 0, animd->ad_BitMapHeader.bmh_Width, animd->ad_BitMapHeader.bmh_Height, 0xC0, 0xFF, NULL);
+        animd->ad_Flags |= ANIMDF_DOREMAP;
     }
 
     return (IPTR)animd->ad_FrameBuffer;
@@ -150,8 +191,39 @@ IPTR DT_AllocBuffer(struct IClass *cl, struct Gadget *g, struct privAllocBuffer 
 IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, Msg msg)
 {
     struct Animation_Data *animd = INST_DATA (cl, g);
+    struct TagItem bestpenTags[] =
+    {
+        { OBP_Precision,        PRECISION_ICON  },
+        { TAG_DONE,             0               }
+    };
+    UBYTE allocpen;
+    int i;
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    if (animd->ad_Window)
+    {
+        animd->ad_ColorMap = animd->ad_Window->WScreen->ViewPort.ColorMap;
+        D(bug("[animation.datatype] %s: colormap @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorMap));
+
+        for (i = 0; i < animd->ad_NumColors; i++)
+        {
+            allocpen = animd->ad_NumAlloc++;
+            animd->ad_Allocated[allocpen] = ObtainBestPenA(animd->ad_Window->WScreen->ViewPort.ColorMap,
+                animd->ad_CRegs[i * 3], animd->ad_CRegs[i * 3 + 1], animd->ad_CRegs[i * 3 + 2],
+                bestpenTags);
+
+            // get the actual color components for the pen.
+            GetRGB32(animd->ad_Window->WScreen->ViewPort.ColorMap,
+                animd->ad_Allocated[allocpen], 1, &animd->ad_GRegs[animd->ad_NumAlloc * 3]);
+
+            D(bug("[animation.datatype] %s: bestpen #%d for %02x%02x%02x\n", __PRETTY_FUNCTION__, animd->ad_Allocated[allocpen], (animd->ad_CRegs[i * 3] & 0xFF), (animd->ad_CRegs[i * 3 + 1] & 0xFF), (animd->ad_CRegs[i * 3 + 2] & 0xFF)));
+
+            animd->ad_ColorTable[i] = animd->ad_Allocated[allocpen];
+            animd->ad_ColorTable2[i] = animd->ad_Allocated[allocpen];
+        }
+        animd->ad_Flags &= ~ANIMDF_DOREMAP;
+    }
 
     return 1;
 }
@@ -253,6 +325,12 @@ IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
     case ADTA_ColorTable2:
         D(bug("[animation.datatype] %s: ADTA_ColorTable2\n", __PRETTY_FUNCTION__));
         *msg->opg_Storage = (IPTR) animd->ad_ColorTable2;
+        D(bug("[animation.datatype] %s:     = %p\n", __PRETTY_FUNCTION__, *msg->opg_Storage));
+        break;
+
+    case ADTA_Allocated:
+        D(bug("[animation.datatype] %s: ADTA_Allocated\n", __PRETTY_FUNCTION__));
+        *msg->opg_Storage = (IPTR) animd->ad_Allocated;
         D(bug("[animation.datatype] %s:     = %p\n", __PRETTY_FUNCTION__, *msg->opg_Storage));
         break;
 
@@ -553,6 +631,11 @@ IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
+    DoMethod(o, PRIVATE_FREECOLORTABLES);
+
+    if (animd->ad_FrameBuffer)
+        FreeBitMap(animd->ad_FrameBuffer);
+
     if (animd->ad_Tapedeck)
         DisposeObject (animd->ad_Tapedeck);
 
@@ -596,6 +679,9 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
     IPTR RetVal;
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    // cache the window pointer
+    animd->ad_Window = msg->gpl_GInfo->gi_Window;
 
     RetVal = DoSuperMethodA(cl, (Object *)g, (Msg)msg);
 
@@ -687,7 +773,7 @@ IPTR DT_Render(struct IClass *cl, struct Gadget *g, struct gpRender *msg)
 
         DoMethod((Object *)g, PRIVATE_ALLOCBUFFER, msg->gpr_RPort->BitMap, bmdepth);
 
-        if ((animd->ad_KeyFrame) &&  (animd->ad_Flags & ANIMDF_REMAP))
+        if ((animd->ad_KeyFrame) && (animd->ad_Flags & ANIMDF_DOREMAP))
         {
             DoMethod((Object *)g, PRIVATE_REMAPBUFFER);
         }
