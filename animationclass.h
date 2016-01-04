@@ -22,7 +22,7 @@ struct Animation_Data
     ULONG                       ad_Flags;               /* object control flags */
     UWORD                       ad_Frames;             /* # of frames */
     UWORD                       ad_FramesPerSec;
-    UWORD                       ad_KeyFrame;
+    struct BitMap               *ad_KeyFrame;
     UWORD                       ad_pad0;
     UWORD                       ad_VertTop;
     UWORD                       ad_VertTotal;

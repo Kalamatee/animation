@@ -46,20 +46,17 @@ const IPTR SupportedMethods[] =
     GM_GOINACTIVE,
     GM_HANDLEINPUT,
     GM_RENDER,
-    GM_HELPTEST,
 
-    DTM_PROCLAYOUT,
     DTM_FRAMEBOX,
 
-    DTM_REMOVEDTOBJECT,
     DTM_TRIGGER,
 
-//    DTM_SELECT,
-//    DTM_CLEARSELECTED,
+    DTM_CLEARSELECTED,
     DTM_COPY,
     DTM_PRINT,
     DTM_WRITE,
 
+#if (0)
     ADTM_LOCATE,
     ADTM_PAUSE,
     ADTM_START,
@@ -68,8 +65,21 @@ const IPTR SupportedMethods[] =
     ADTM_UNLOADFRAME,
     ADTM_LOADNEWFORMATFRAME,
     ADTM_UNLOADNEWFORMATFRAME,
+#endif
 
     (~0)
+};
+
+struct DTMethod SupportedTriggerMethods[] =
+{
+    { "Play",                   "PLAY",		        STM_PLAY        },
+    { "Stop",                   "STOP",		        STM_STOP        },
+    { "Pause",                  "PAUSE",	        STM_PAUSE       },
+
+    { "Rewind",                 "REWIND",	        STM_REWIND      },
+    { "Fast Forward",           "FF",		        STM_FASTFORWARD },
+
+    { NULL,                     NULL,                   0               },
 };
 
 void AnimDT_AllocColorTables(struct Animation_Data *animd, UWORD numcolors)
@@ -222,9 +232,12 @@ IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
 
     case DTA_TriggerMethods:
         D(bug("[animation.datatype] %s: DTA_TriggerMethods\n", __PRETTY_FUNCTION__));
+        *msg->opg_Storage = (IPTR) SupportedTriggerMethods;
         break;
+
     case DTA_Methods:
         D(bug("[animation.datatype] %s: DTA_Methods\n", __PRETTY_FUNCTION__));
+        *msg->opg_Storage = (IPTR) SupportedMethods;
         break;
 
     case DTA_ControlPanel:
@@ -331,8 +344,8 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
             break;
 
         case ADTA_KeyFrame:
-            D(bug("[animation.datatype] %s: ADTA_KeyFrame (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
-            animd->ad_KeyFrame = (UWORD) tag->ti_Data;
+            D(bug("[animation.datatype] %s: ADTA_KeyFrame (0x%p)\n", __PRETTY_FUNCTION__, tag->ti_Data));
+            animd->ad_KeyFrame = (struct BitMap *) tag->ti_Data;
             break;
 
         case ADTA_NumColors:
