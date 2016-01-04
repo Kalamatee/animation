@@ -32,6 +32,8 @@
 
 #include "animationclass.h"
 
+ADD2LIBS("gadgets/tapedeck.gadget", 0, struct Library *, TapeDeckBase);
+
 const IPTR SupportedMethods[] =
 {
     OM_NEW,
@@ -548,9 +550,61 @@ IPTR DT_HitTestMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
 
 IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
 {
+    struct Animation_Data *animd = INST_DATA (cl, (Object *)g);
+    struct IBox *gadBox;
     IPTR RetVal;
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    RetVal = DoSuperMethodA(cl, (Object *)g, (Msg)msg);
+
+    GetAttr(DTA_Domain, (Object *)g, (IPTR *)&gadBox);
+
+    // propogate our known dimensions to the tapedeck ..
+    if (animd->ad_Tapedeck)
+    {
+        struct TagItem tdAttrs[] =
+        {
+            { GA_Left,          gadBox->Left                                    },
+            { GA_Top,           0                                               },
+            { GA_Width,         animd->ad_BitMapHeader.bmh_Width                },
+            { GA_Height,        0                                               },
+            { TAG_DONE,         0                                               }
+        };
+
+        GetAttr(GA_Height, (Object *)animd->ad_Tapedeck, (IPTR *)&tdAttrs[3].ti_Data);
+
+        D(bug("[animation.datatype]: %s: tapedeck height = %d\n", __PRETTY_FUNCTION__, tdAttrs[3].ti_Data));
+
+        animd->ad_Flags |= ANIMDF_SHOWPANEL;
+
+        // try to adjust to accomodate it ..
+        if (gadBox->Height > animd->ad_BitMapHeader.bmh_Height + tdAttrs[3].ti_Data)
+            tdAttrs[1].ti_Data = gadBox->Top + animd->ad_BitMapHeader.bmh_Height;
+        else
+        {
+            if (gadBox->Height > tdAttrs[3].ti_Data)
+                tdAttrs[1].ti_Data = gadBox->Top + gadBox->Height - tdAttrs[3].ti_Data;
+            else
+            {
+                // TODO: Adjust the tapedeck height or hide it?
+                D(bug("[animation.datatype]: %s: tapedeck to big for visible space!\n", __PRETTY_FUNCTION__));
+                animd->ad_Flags &= ~ANIMDF_SHOWPANEL;
+            }
+        }
+
+        if (gadBox->Width > animd->ad_BitMapHeader.bmh_Width)
+            tdAttrs[2].ti_Data = animd->ad_BitMapHeader.bmh_Width;
+        else
+            tdAttrs[2].ti_Data = gadBox->Width;
+
+        SetAttrsA((Object *)animd->ad_Tapedeck, tdAttrs);
+
+        // .. and ask it to layout
+        // NB - Do not use async layout or it crashes .. =(
+        DoMethod((Object *)animd->ad_Tapedeck,
+            GM_LAYOUT, (IPTR)msg->gpl_GInfo, (IPTR)msg->gpl_Initial);
+    }
 
 #if (0)
     NotifyAttrChanges((Object *) g, msg->gpl_GInfo, 0,
@@ -559,17 +613,41 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
    				 TAG_DONE);
 #endif
 
-    RetVal = DoSuperMethodA(cl, (Object *) g, (Msg) msg);
-    
-    RetVal += (IPTR) DoAsyncLayout((Object *) g, msg);
-
-    return(RetVal);
+    return RetVal;
 }
 
-IPTR DT_Render(struct IClass *cl, struct Gadget *g, struct opSet *msg)
+IPTR DT_Render(struct IClass *cl, struct Gadget *g, struct gpRender *msg)
 {
+    struct Animation_Data *animd = INST_DATA (cl, (Object *)g);
+    struct IBox *gadBox;
+    UWORD fillwidth, fillheight;
+
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
-    return NULL;
+
+    {
+        // for now fill the animations area
+        GetAttr(DTA_Domain, (Object *)g, (IPTR *)&gadBox);
+
+        if (gadBox->Width > animd->ad_BitMapHeader.bmh_Width)
+            fillwidth = animd->ad_BitMapHeader.bmh_Width;
+        else
+            fillwidth = gadBox->Width;
+            
+        if (gadBox->Height > animd->ad_BitMapHeader.bmh_Height)
+            fillheight = animd->ad_BitMapHeader.bmh_Height;
+        else
+            fillheight = gadBox->Height;
+
+        SetRPAttrs(msg->gpr_RPort, RPTAG_FgColor, 0xEE8888, TAG_DONE );
+        RectFill(msg->gpr_RPort, gadBox->Left, gadBox->Top , gadBox->Left + fillwidth, gadBox->Top + fillheight);
+    }
+
+    if (animd->ad_Flags & ANIMDF_SHOWPANEL)
+    {
+        DoMethodA((Object *)animd->ad_Tapedeck, (Msg)msg);
+    }
+
+    return (IPTR)TRUE;
 }
 
 IPTR DT_FrameBox(struct IClass *cl, struct Gadget *g, struct opSet *msg)

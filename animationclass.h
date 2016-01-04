@@ -17,6 +17,8 @@
 #define	ANIMDF_SMARTSKIP        (1 << 5)
 #define	ANIMDF_ADJUSTPALETTE    (1 << 6)
 
+#define ANIMDF_SHOWPANEL        (1 << 31)  // special flag used by rendering/layout code
+
 struct Animation_Data
 {
     ULONG                       ad_Flags;               /* object control flags */
