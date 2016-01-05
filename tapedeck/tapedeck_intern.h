@@ -49,7 +49,10 @@
 /* CycleClass definitions */
 struct TapeDeckData
 {
-    void  	    *temp;
+    struct Gadget               *tdd_PosProp;
+    ULONG                       tdd_Mode;
+    ULONG                       tdd_FrameCount;
+    ULONG                       tdd_FrameCurrent;
 };
 
 #endif /* TAPEDECK_INTERN_H */

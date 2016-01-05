@@ -4,6 +4,10 @@
 */
 
 /***********************************************************************************/
+#ifndef DEBUG
+#   define DEBUG 1
+#endif
+#include <aros/debug.h>
 
 #define USE_BOOPSI_STUBS
 #include <exec/libraries.h>
@@ -23,10 +27,7 @@
 #include <gadgets/aroscycle.h>
 #include <proto/alib.h>
 
-#ifndef DEBUG
-#   define DEBUG 1
-#endif
-#include <aros/debug.h>
+#include <gadgets/tapedeck.h>
 
 #include "tapedeck_intern.h"
 
@@ -39,44 +40,6 @@
 
 /***********************************************************************************/
 
-Object *TapeDeck__OM_NEW(Class *cl, Class *rootcl, struct opSet *msg)
-{
-    struct TapeDeckData 	*data;
-    struct TextAttr 	*tattr;
-    Object  	    	*o;
-
-    D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
-
-    o = (Object *)DoSuperMethodA(cl, (Object *)rootcl, (Msg)msg);
-    if (!o)
-        return NULL;
-
-    data = INST_DATA(cl, o);
-
-#if (0)
-    tattr = (struct TextAttr *)GetTagData(GA_TextAttr, (IPTR) NULL, msg->ops_AttrList);
-    if (tattr) data->font = OpenFont(tattr);
-#endif
-
-    return o;
-}
-
-/***********************************************************************************/
-
-VOID TapeDeck__OM_DISPOSE(Class *cl, Object *o, Msg msg)
-{
-    struct TapeDeckData *data = INST_DATA(cl, o);
-
-    D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
-
-    if (EG(o)->GadgetRender)
-        DisposeObject(EG(o)->GadgetRender);
-
-    DoSuperMethodA(cl,o,msg);
-}
-
-/***********************************************************************************/
-
 IPTR TapeDeck__OM_GET(Class *cl, Object *o, struct opGet *msg)
 {
     struct TapeDeckData *data = INST_DATA(cl, o);
@@ -86,6 +49,18 @@ IPTR TapeDeck__OM_GET(Class *cl, Object *o, struct opGet *msg)
 
     switch(msg->opg_AttrID)
     {
+        case TDECK_Mode:
+            *msg->opg_Storage = (IPTR)data->tdd_Mode;
+            break;
+
+        case TDECK_Frames:
+            *msg->opg_Storage = (IPTR)data->tdd_FrameCount;
+            break;
+
+	case TDECK_CurrentFrame:
+            *msg->opg_Storage = (IPTR)data->tdd_FrameCurrent;
+            break;
+
         case GA_Height:
             *msg->opg_Storage = 20;
             break;
@@ -102,11 +77,11 @@ IPTR TapeDeck__OM_GET(Class *cl, Object *o, struct opGet *msg)
 
 IPTR TapeDeck__OM_SET(Class *cl, Object *o, struct opSet *msg)
 {
-    struct TapeDeckData 	 *data = INST_DATA(cl, o);
-    struct TagItem       *tag, *taglist = msg->ops_AttrList;
-    STRPTR  	    	 *mylabels;
-    BOOL    	    	  rerender = FALSE;
-    IPTR    	    	  result;
+    struct TapeDeckData *data = INST_DATA(cl, o);
+    struct TagItem      *tag, *taglist = msg->ops_AttrList;
+    STRPTR              *mylabels;
+    BOOL                rerender = FALSE;
+    IPTR                result;
 
     D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
 
@@ -116,6 +91,21 @@ IPTR TapeDeck__OM_SET(Class *cl, Object *o, struct opSet *msg)
     {
         switch(tag->ti_Tag)
         {
+            case TDECK_Mode:
+                D(bug("[tapedeck.gadget] %s: TDECK_Mode %08x\n", __PRETTY_FUNCTION__, tag->ti_Data));
+                data->tdd_Mode = (ULONG)tag->ti_Data;
+		break;
+
+	    case TDECK_Frames:
+                D(bug("[tapedeck.gadget] %s: TDECK_Frames - %d\n", __PRETTY_FUNCTION__, tag->ti_Data));
+                data->tdd_FrameCount = (ULONG)tag->ti_Data;
+		break;
+
+            case TDECK_CurrentFrame:
+                D(bug("[tapedeck.gadget] %s: TDECK_CurrentFrame - %d\n", __PRETTY_FUNCTION__, tag->ti_Data));
+                data->tdd_FrameCurrent = (ULONG)tag->ti_Data;
+		break;
+
 	    case GA_Disabled:
 		rerender = TRUE;
 		break;
@@ -158,13 +148,77 @@ IPTR TapeDeck__OM_SET(Class *cl, Object *o, struct opSet *msg)
 
 /***********************************************************************************/
 
+Object *TapeDeck__OM_NEW(Class *cl, Class *rootcl, struct opSet *msg)
+{
+    struct TapeDeckData 	*data;
+    struct TagItem pproptags[] =
+    {
+        { PGA_Visible,          1               },
+        { PGA_Freedom,          FREEHORIZ       },
+        { PGA_Borderless,       TRUE            },
+        { PGA_Total,            1               },
+        { PGA_Top,              0               },
+        { TAG_DONE,             0               }
+    };
+    struct TagItem  	frametags[] =
+    {
+        { IA_EdgesOnly,         FALSE		},
+	{ IA_FrameType,         FRAME_BUTTON	},
+        { TAG_DONE,             0UL 		}
+    };
+
+    struct TextAttr 	*tattr;
+    Object  	    	*o;
+    D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
+
+    o = (Object *)DoSuperMethodA(cl, (Object *)rootcl, (Msg)msg);
+    if (o)
+    {
+        data = INST_DATA(cl, o);
+
+        EG(o)->GadgetRender = NewObjectA(NULL, FRAMEICLASS, frametags);
+        D(bug("[tapedeck.gadget] %s: frame @ 0x%p\n", __PRETTY_FUNCTION__, EG(o)->GadgetRender));
+
+#if (0)
+        tattr = (struct TextAttr *)GetTagData(GA_TextAttr, (IPTR) NULL, msg->ops_AttrList);
+        if (tattr) data->font = OpenFont(tattr);
+#endif
+
+        TapeDeck__OM_SET(cl, rootcl, msg);
+
+        pproptags[3].ti_Data = data->tdd_FrameCount;
+        pproptags[4].ti_Data = data->tdd_FrameCurrent;    
+        data->tdd_PosProp = NewObjectA(NULL, "propgclass", pproptags);
+        D(bug("[tapedeck.gadget] %s: playback position prop @ 0x%p\n", __PRETTY_FUNCTION__, data->tdd_PosProp));
+    }
+
+    return o;
+}
+
+/***********************************************************************************/
+
+VOID TapeDeck__OM_DISPOSE(Class *cl, Object *o, Msg msg)
+{
+    struct TapeDeckData *data = INST_DATA(cl, o);
+
+    D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
+
+    if (data->tdd_PosProp)
+        DisposeObject(data->tdd_PosProp);
+
+    if (EG(o)->GadgetRender)
+        DisposeObject(EG(o)->GadgetRender);
+
+    DoSuperMethodA(cl,o,msg);
+}
+
+/***********************************************************************************/
+
 IPTR TapeDeck__GM_LAYOUT(Class *cl, Object *o, struct gpLayout *msg)
 {
     struct TagItem  	frametags[] = {
         { IA_Width	, 0 		},
         { IA_Height	, 0 		},
-        { IA_EdgesOnly	, FALSE		},
-	{ IA_FrameType	, FRAME_BUTTON	},
         { TAG_DONE	, 0UL 		}
     };
 
@@ -172,8 +226,9 @@ IPTR TapeDeck__GM_LAYOUT(Class *cl, Object *o, struct gpLayout *msg)
 
     GetAttr(GA_Width, o, (IPTR *)&frametags[0].ti_Data);
     GetAttr(GA_Height, o, (IPTR *)&frametags[1].ti_Data);
-    
-    EG(o)->GadgetRender = NewObjectA(NULL, FRAMEICLASS, frametags);
+
+    SetAttrsA((Object *)EG(o)->GadgetRender, frametags);
+    DoMethodA((Object *)EG(o)->GadgetRender, msg);
 
     return 1;
 }
