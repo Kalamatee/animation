@@ -48,6 +48,8 @@ struct Animation_Data
     UBYTE			*ad_ColorTable;
     UBYTE			*ad_ColorTable2;
     UBYTE			*ad_Allocated;          /* pens we have actually allocated      */
+    struct Player               *ad_Player;
+    struct Hook                 ad_PlayerHook;
 };
 
 #define PRIVATE_ALLOCCOLORTABLES        (0x0808000000 + 1)

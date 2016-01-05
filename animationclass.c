@@ -16,6 +16,7 @@
 #include <proto/layers.h>
 #include <proto/datatypes.h>
 #include <proto/cybergraphics.h>
+#include <proto/realtime.h>
 
 #include <exec/types.h>
 #include <exec/memory.h>
@@ -29,11 +30,18 @@
 #include <datatypes/datatypesclass.h>
 #include <datatypes/animationclass.h>
 #include <cybergraphx/cybergraphics.h>
+#include <libraries/realtime.h>
 
 #include <gadgets/tapedeck.h>
 
 #include "animationclass.h"
 
+extern AROS_UFP3(ULONG, playerHookFunc,
+    AROS_UFPA(struct Hook *, hook, A0),
+    AROS_UFPA(struct Player *, obj, A2),
+    AROS_UFPA(struct pmTime *, msg, A1));
+
+ADD2LIBS("realtime.library", 0, struct Library *, RealTimeBase);
 ADD2LIBS("gadgets/tapedeck.gadget", 0, struct Library *, TapeDeckBase);
 
 const IPTR SupportedMethods[] =
@@ -634,6 +642,15 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
         { GA_Height, 15},
         { TAG_DONE, 0}
     };
+    struct TagItem playertags[] =
+    {
+        { PLAYER_Name,          (IPTR) "animation"      },
+        { PLAYER_Conductor,     (IPTR) "playback"       },
+        { PLAYER_Priority,      0                       },
+        { PLAYER_Hook,          0                       },
+        { PLAYER_Ready,         (IPTR)FALSE             },
+        { TAG_DONE,             0                       }
+    };
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
@@ -658,6 +675,15 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
         {
             D(bug("[animation.datatype] %s: Tapedeck @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_Tapedeck));
         }
+
+        /* create a realtime player */
+        animd->ad_PlayerHook.h_Entry = &HookEntry; 
+        animd->ad_PlayerHook.h_SubEntry = (HOOKFUNC)playerHookFunc;
+        playertags[3].ti_Data = (IPTR)&animd->ad_PlayerHook;
+        if ((animd->ad_Player = CreatePlayerA(playertags)) != NULL)
+        {
+            D(bug("[animation.datatype] %s: Realtime Player @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_Player));
+        }
     }
 
     D(bug("[animation.datatype] %s: returning %p\n", __PRETTY_FUNCTION__, g));
@@ -670,6 +696,9 @@ IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
     struct Animation_Data *animd = INST_DATA (cl, o);
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    if (animd->ad_Player)
+        DeletePlayer(animd->ad_Player);
 
     DoMethod(o, PRIVATE_FREECOLORTABLES);
 
