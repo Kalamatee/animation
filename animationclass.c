@@ -30,6 +30,8 @@
 #include <datatypes/animationclass.h>
 #include <cybergraphx/cybergraphics.h>
 
+#include <gadgets/tapedeck.h>
+
 #include "animationclass.h"
 
 ADD2LIBS("gadgets/tapedeck.gadget", 0, struct Library *, TapeDeckBase);
@@ -492,6 +494,9 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
         case ADTA_Frames:
             D(bug("[animation.datatype] %s: ADTA_Frames (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
             animd->ad_Frames = (UWORD) tag->ti_Data;
+            attrtags[0].ti_Tag = TDECK_Frames;
+            attrtags[0].ti_Data = tag->ti_Data;
+            SetAttrsA((Object *)animd->ad_Tapedeck, attrtags);
             break;
 
         case ADTA_KeyFrame:
@@ -830,7 +835,7 @@ IPTR DT_Render(struct IClass *cl, struct Gadget *g, struct gpRender *msg)
     return (IPTR)TRUE;
 }
 
-IPTR DT_FrameBox(struct IClass *cl, struct Gadget *g, struct opSet *msg)
+IPTR DT_FrameBox(struct IClass *cl, struct Gadget *g, struct dtFrameBox *msg)
 {
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
     return NULL;
