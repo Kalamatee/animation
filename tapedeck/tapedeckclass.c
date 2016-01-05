@@ -79,7 +79,11 @@ IPTR TapeDeck__OM_SET(Class *cl, Object *o, struct opSet *msg)
 {
     struct TapeDeckData *data = INST_DATA(cl, o);
     struct TagItem      *tag, *taglist = msg->ops_AttrList;
-    STRPTR              *mylabels;
+    struct TagItem attrtags[] =
+    {
+        { TAG_IGNORE,   0},
+        { TAG_DONE,     0}
+    };
     BOOL                rerender = FALSE;
     IPTR                result;
 
@@ -99,11 +103,23 @@ IPTR TapeDeck__OM_SET(Class *cl, Object *o, struct opSet *msg)
 	    case TDECK_Frames:
                 D(bug("[tapedeck.gadget] %s: TDECK_Frames - %d\n", __PRETTY_FUNCTION__, tag->ti_Data));
                 data->tdd_FrameCount = (ULONG)tag->ti_Data;
+                if (data->tdd_PosProp)
+                {
+                    attrtags[0].ti_Tag = PGA_Total;
+                    attrtags[0].ti_Data = tag->ti_Data;
+                    SetAttrsA((Object *)data->tdd_PosProp, attrtags);
+                }
 		break;
 
             case TDECK_CurrentFrame:
                 D(bug("[tapedeck.gadget] %s: TDECK_CurrentFrame - %d\n", __PRETTY_FUNCTION__, tag->ti_Data));
                 data->tdd_FrameCurrent = (ULONG)tag->ti_Data;
+                if (data->tdd_PosProp)
+                {
+                    attrtags[0].ti_Tag = PGA_Top;
+                    attrtags[0].ti_Data = tag->ti_Data;
+                    SetAttrsA((Object *)data->tdd_PosProp, attrtags);
+                }
 		break;
 
 	    case GA_Disabled:
@@ -184,7 +200,7 @@ Object *TapeDeck__OM_NEW(Class *cl, Class *rootcl, struct opSet *msg)
         if (tattr) data->font = OpenFont(tattr);
 #endif
 
-        TapeDeck__OM_SET(cl, rootcl, msg);
+        TapeDeck__OM_SET(cl, o, msg);
 
         pproptags[3].ti_Data = data->tdd_FrameCount;
         pproptags[4].ti_Data = data->tdd_FrameCurrent;    
@@ -204,31 +220,41 @@ VOID TapeDeck__OM_DISPOSE(Class *cl, Object *o, Msg msg)
     D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
 
     if (data->tdd_PosProp)
-        DisposeObject(data->tdd_PosProp);
+        DisposeObject((Object *)data->tdd_PosProp);
 
     if (EG(o)->GadgetRender)
-        DisposeObject(EG(o)->GadgetRender);
+        DisposeObject((Object *)EG(o)->GadgetRender);
 
     DoSuperMethodA(cl,o,msg);
 }
 
 /***********************************************************************************/
 
-IPTR TapeDeck__GM_LAYOUT(Class *cl, Object *o, struct gpLayout *msg)
+IPTR TapeDeck__GM_LAYOUT(Class *cl, struct Gadget *g, struct gpLayout *msg)
 {
+    struct TapeDeckData *data = INST_DATA(cl, g);
+    struct IBox *bounds = &msg->gpl_GInfo->gi_Domain;
     struct TagItem  	frametags[] = {
-        { IA_Width	, 0 		},
-        { IA_Height	, 0 		},
-        { TAG_DONE	, 0UL 		}
+        { GA_Left,      g->LeftEdge     },
+        { GA_Top,       g->TopEdge      },
+        { IA_Width,     g->Width        },
+        { IA_Height,    g->Height	},
+        { TAG_DONE,     0UL 		}
     };
 
     D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
 
-    GetAttr(GA_Width, o, (IPTR *)&frametags[0].ti_Data);
-    GetAttr(GA_Height, o, (IPTR *)&frametags[1].ti_Data);
+    SetAttrsA((Object *)g->GadgetRender, frametags);
+    DoMethodA((Object *)g->GadgetRender, msg);
 
-    SetAttrsA((Object *)EG(o)->GadgetRender, frametags);
-    DoMethodA((Object *)EG(o)->GadgetRender, msg);
+    frametags[0].ti_Data = g->LeftEdge + 1;
+    frametags[2].ti_Tag = GA_Width;
+    frametags[2].ti_Data = g->Width - 2;
+    frametags[3].ti_Tag = GA_Height;
+    frametags[3].ti_Data = 4;
+
+    SetAttrsA((Object *)data->tdd_PosProp, frametags);
+    DoMethodA((Object *)data->tdd_PosProp, msg);
 
     return 1;
 }
@@ -249,6 +275,8 @@ IPTR TapeDeck__GM_RENDER(Class *cl, Object *o, struct gpRender *msg)
                        msg->gpr_GInfo->gi_DrInfo);
     }
 
+    DoMethodA((Object *)data->tdd_PosProp, msg);
+    
     SetAPen(msg->gpr_RPort, msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHADOWPEN]);
   
     rend_x = (EG(o)->Width - 59) >> 1;
