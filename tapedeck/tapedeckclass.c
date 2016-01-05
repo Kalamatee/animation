@@ -196,12 +196,31 @@ IPTR TapeDeck__GM_RENDER(Class *cl, Object *o, struct gpRender *msg)
 
     SetAPen(msg->gpr_RPort, msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHADOWPEN]);
   
-    rend_x = EG(o)->Width >> 1;
+    rend_x = (EG(o)->Width - 59) >> 1;
+    rend_y = EG(o)->TopEdge + ((EG(o)->Height - 9) >> 1);
 
+    {
+        /* Rewind */
+
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x, rend_y + 5 , EG(o)->LeftEdge + rend_x + 1, rend_y + 5);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 2, rend_y + 4 , EG(o)->LeftEdge + rend_x + 3, rend_y + 6);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 4, rend_y + 3 , EG(o)->LeftEdge + rend_x + 5, rend_y + 7);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 6, rend_y + 2 , EG(o)->LeftEdge + rend_x + 7, rend_y + 8);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 8, rend_y + 1 , EG(o)->LeftEdge + rend_x + 9, rend_y + 9);
+
+        rend_x += 9;
+
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x, rend_y + 5 , EG(o)->LeftEdge + rend_x + 1, rend_y + 5);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 2, rend_y + 4 , EG(o)->LeftEdge + rend_x + 3, rend_y + 6);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 4, rend_y + 3 , EG(o)->LeftEdge + rend_x + 5, rend_y + 7);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 6, rend_y + 2 , EG(o)->LeftEdge + rend_x + 7, rend_y + 8);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 8, rend_y + 1 , EG(o)->LeftEdge + rend_x + 9, rend_y + 9);
+    }
+    
     {
         /* Play */
 
-        rend_y = EG(o)->TopEdge + ((EG(o)->Height - 9) >> 1);
+        rend_x += 16;
 
         RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x, rend_y , EG(o)->LeftEdge + rend_x + 1, rend_y + 10);
         RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 2, rend_y + 1 , EG(o)->LeftEdge + rend_x + 3, rend_y + 9);
@@ -212,10 +231,30 @@ IPTR TapeDeck__GM_RENDER(Class *cl, Object *o, struct gpRender *msg)
     }
 
     {
+        /* Fast Forward */
+
+        rend_x += 14;
+
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 2, rend_y + 1 , EG(o)->LeftEdge + rend_x + 3, rend_y + 9);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 4, rend_y + 2 , EG(o)->LeftEdge + rend_x + 5, rend_y + 8);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 6, rend_y + 3 , EG(o)->LeftEdge + rend_x + 7, rend_y + 7);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 8, rend_y + 4 , EG(o)->LeftEdge + rend_x + 9, rend_y + 6);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 10, rend_y + 5 , EG(o)->LeftEdge + rend_x + 11, rend_y + 5);
+
+        rend_x += 9;
+
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 2, rend_y + 1 , EG(o)->LeftEdge + rend_x + 3, rend_y + 9);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 4, rend_y + 2 , EG(o)->LeftEdge + rend_x + 5, rend_y + 8);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 6, rend_y + 3 , EG(o)->LeftEdge + rend_x + 7, rend_y + 7);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 8, rend_y + 4 , EG(o)->LeftEdge + rend_x + 9, rend_y + 6);
+        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 10, rend_y + 5 , EG(o)->LeftEdge + rend_x + 11, rend_y + 5);
+    }
+
+#if (0)
+    {
         /* volume control */
 
         rend_x = EG(o)->LeftEdge + EG(o)->Width - 17;
-        rend_y = EG(o)->TopEdge + ((EG(o)->Height - 9) >> 1);
 
         RectFill(msg->gpr_RPort, rend_x + 1, rend_y + 4, rend_x + 4, rend_y + 6);
         RectFill(msg->gpr_RPort, rend_x + 5, rend_y + 3, rend_x + 5, rend_y + 7);
@@ -229,6 +268,7 @@ IPTR TapeDeck__GM_RENDER(Class *cl, Object *o, struct gpRender *msg)
         RectFill(msg->gpr_RPort, rend_x + 9,  rend_y + 4, rend_x + 9,  rend_y + 6);
         RectFill(msg->gpr_RPort, rend_x + 10, rend_y + 5, rend_x + 10, rend_y + 5);
     }
+#endif
 
     return 1;
 }
