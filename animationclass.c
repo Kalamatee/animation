@@ -494,9 +494,12 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
         case ADTA_Frames:
             D(bug("[animation.datatype] %s: ADTA_Frames (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
             animd->ad_Frames = (UWORD) tag->ti_Data;
-            attrtags[0].ti_Tag = TDECK_Frames;
-            attrtags[0].ti_Data = tag->ti_Data;
-            SetAttrsA((Object *)animd->ad_Tapedeck, attrtags);
+            if (animd->ad_Tapedeck)
+            {
+                attrtags[0].ti_Tag = TDECK_Frames;
+                attrtags[0].ti_Data = tag->ti_Data;
+                SetAttrsA((Object *)animd->ad_Tapedeck, attrtags);
+            }
             break;
 
         case ADTA_KeyFrame:
@@ -885,19 +888,58 @@ IPTR DT_Locate(struct IClass *cl, struct Gadget *g, struct opSet *msg)
 
 IPTR DT_Pause(struct IClass *cl, struct Gadget *g, struct opSet *msg)
 {
+    struct Animation_Data *animd = INST_DATA (cl, (Object *)g);
+
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    if (animd->ad_Tapedeck)
+    {
+        struct TagItem tdAttrs[] =
+        {
+            { TDECK_Mode,          BUT_STOP                                    },
+            { TAG_DONE,         0                                               }
+        };
+        SetAttrsA((Object *)animd->ad_Tapedeck, tdAttrs);
+    }
+
     return NULL;
 }
 
 IPTR DT_Start(struct IClass *cl, struct Gadget *g, struct opSet *msg)
 {
+    struct Animation_Data *animd = INST_DATA (cl, (Object *)g);
+
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    if (animd->ad_Tapedeck)
+    {
+        struct TagItem tdAttrs[] =
+        {
+            { TDECK_Mode,          BUT_PLAY                                    },
+            { TAG_DONE,         0                                               }
+        };
+        SetAttrsA((Object *)animd->ad_Tapedeck, tdAttrs);
+    }
+
     return NULL;
 }
 
 IPTR DT_Stop(struct IClass *cl, struct Gadget *g, struct opSet *msg)
 {
+    struct Animation_Data *animd = INST_DATA (cl, (Object *)g);
+
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    if (animd->ad_Tapedeck)
+    {
+        struct TagItem tdAttrs[] =
+        {
+            { TDECK_Mode,          BUT_STOP                                    },
+            { TAG_DONE,         0                                               }
+        };
+        SetAttrsA((Object *)animd->ad_Tapedeck, tdAttrs);
+    }
+
     return NULL;
 }
 
