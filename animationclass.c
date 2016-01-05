@@ -202,7 +202,7 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, Msg msg)
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
-    if (animd->ad_Window)
+    if ((animd->ad_Window) && (animd->ad_Flags & ANIMDF_DOREMAP))
     {
         animd->ad_ColorMap = animd->ad_Window->WScreen->ViewPort.ColorMap;
         D(bug("[animation.datatype] %s: colormap @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorMap));
@@ -378,7 +378,7 @@ IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
 
     case DTA_ControlPanel:
         D(bug("[animation.datatype] %s: DTA_ControlPanel\n", __PRETTY_FUNCTION__));
-        if (animd->ad_Flags & ANIMDF_CONTROLPANEL)
+        if ((animd->ad_Tapedeck) && (animd->ad_Flags & ANIMDF_CONTROLPANEL))
             *msg->opg_Storage = (IPTR) TRUE;
         else
             *msg->opg_Storage = (IPTR) FALSE;
@@ -445,6 +445,11 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
 {
     struct Animation_Data *animd = INST_DATA (cl, g);
     struct TagItem *tstate = msg->ops_AttrList;
+    struct TagItem attrtags[] =
+    {
+        { TAG_IGNORE,   0},
+        { TAG_DONE,     0}
+    };
     struct TagItem *tag;
     IPTR rv = 0;
 
@@ -462,11 +467,21 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
         case ADTA_Width:
             D(bug("[animation.datatype] %s: ADTA_Width (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
             animd->ad_BitMapHeader.bmh_Width = (UWORD) tag->ti_Data;
+            attrtags[0].ti_Tag = DTA_NominalHoriz;
+            attrtags[0].ti_Data = tag->ti_Data;
+            SetAttrsA((Object *)g, attrtags);
             break;
 
         case ADTA_Height:
             D(bug("[animation.datatype] %s: ADTA_Height (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
             animd->ad_BitMapHeader.bmh_Height = (UWORD) tag->ti_Data;
+            attrtags[0].ti_Tag = DTA_NominalVert;
+            if ((animd->ad_Tapedeck) && (animd->ad_Flags & ANIMDF_CONTROLPANEL))
+                GetAttr(GA_Height, (Object *)animd->ad_Tapedeck, (IPTR *)&attrtags[0].ti_Data);
+            else
+                attrtags[0].ti_Data = 0;
+            attrtags[0].ti_Data += tag->ti_Data;
+            SetAttrsA((Object *)g, attrtags);
             break;
 
         case ADTA_Depth:
@@ -539,7 +554,7 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
 
         case DTA_ControlPanel:
             D(bug("[animation.datatype] %s: DTA_ControlPanel\n", __PRETTY_FUNCTION__));
-            if (tag->ti_Data)
+            if ((animd->ad_Tapedeck) && (tag->ti_Data))
                 animd->ad_Flags |= ANIMDF_CONTROLPANEL;
             else
                 animd->ad_Flags &= ~(ANIMDF_CONTROLPANEL);
@@ -620,6 +635,8 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
         D(bug("[animation.datatype] %s: Created object 0x%p\n", __PRETTY_FUNCTION__, g));
 
         animd = (struct Animation_Data *) INST_DATA(cl, g);
+
+        animd->ad_Flags = ANIMDF_CONTROLPANEL|ANIMDF_REMAP;
 
         if (msg->ops_AttrList)
         {
@@ -788,7 +805,7 @@ IPTR DT_Render(struct IClass *cl, struct Gadget *g, struct gpRender *msg)
 
         DoMethod((Object *)g, PRIVATE_ALLOCBUFFER, msg->gpr_RPort->BitMap, bmdepth);
 
-        if ((animd->ad_KeyFrame) && (animd->ad_Flags & ANIMDF_DOREMAP))
+        if ((animd->ad_KeyFrame) && (animd->ad_Flags & ANIMDF_REMAP))
         {
             DoMethod((Object *)g, PRIVATE_REMAPBUFFER);
         }
