@@ -648,7 +648,6 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
         { PLAYER_Conductor,     (IPTR) "playback"       },
         { PLAYER_Priority,      0                       },
         { PLAYER_Hook,          0                       },
-        { PLAYER_Ready,         (IPTR)FALSE             },
         { TAG_DONE,             0                       }
     };
 
@@ -662,7 +661,9 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
         animd = (struct Animation_Data *) INST_DATA(cl, g);
 
         animd->ad_Flags = ANIMDF_CONTROLPANEL|ANIMDF_REMAP;
-
+#if (1)
+        animd->ad_Flags |= ANIMDF_IMMEDIATE;
+#endif
         if (msg->ops_AttrList)
         {
             D(bug("[animation.datatype] %s: Setting attributes.. \n", __PRETTY_FUNCTION__));
@@ -784,7 +785,7 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
             else
             {
                 // TODO: Adjust the tapedeck height or hide it?
-                D(bug("[animation.datatype]: %s: tapedeck to big for visible space!\n", __PRETTY_FUNCTION__));
+                D(bug("[animation.datatype]: %s: tapedeck too big for visible space!\n", __PRETTY_FUNCTION__));
                 animd->ad_Flags &= ~ANIMDF_SHOWPANEL;
             }
         }
@@ -808,6 +809,11 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
    				 DTA_Busy, TRUE,
    				 TAG_DONE);
 #endif
+
+    if (animd->ad_Flags & ANIMDF_IMMEDIATE)
+    {
+        DoMethod((Object *)g, ADTM_START, 0);
+    }
 
     return RetVal;
 }
@@ -934,7 +940,7 @@ IPTR DT_Pause(struct IClass *cl, struct Gadget *g, struct opSet *msg)
     return NULL;
 }
 
-IPTR DT_Start(struct IClass *cl, struct Gadget *g, struct opSet *msg)
+IPTR DT_Start(struct IClass *cl, struct Gadget *g, struct adtStart *msg)
 {
     struct Animation_Data *animd = INST_DATA (cl, (Object *)g);
 
@@ -949,6 +955,7 @@ IPTR DT_Start(struct IClass *cl, struct Gadget *g, struct opSet *msg)
         };
         SetAttrsA((Object *)animd->ad_Tapedeck, tdAttrs);
     }
+    SetConductorState(animd->ad_Player, CONDSTATE_RUNNING, msg->asa_Frame);
 
     return NULL;
 }

@@ -19,7 +19,7 @@ AROS_UFH3(ULONG, playerHookFunc,
 { 
     AROS_USERFUNC_INIT
  
-    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+//    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
     switch (msg->pmt_Method)
     {
