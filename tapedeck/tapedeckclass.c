@@ -263,6 +263,7 @@ IPTR TapeDeck__GM_RENDER(Class *cl, Object *o, struct gpRender *msg)
 {
     struct TapeDeckData *data = INST_DATA(cl, o);
     LONG rend_x, rend_y;
+    LONG pen;
 
     D(bug("[tapedeck.gadget]: %s()\n", __PRETTY_FUNCTION__));
 
@@ -277,13 +278,16 @@ IPTR TapeDeck__GM_RENDER(Class *cl, Object *o, struct gpRender *msg)
 
     DoMethodA((Object *)data->tdd_PosProp, msg);
     
-    SetAPen(msg->gpr_RPort, msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHADOWPEN]);
-  
     rend_x = (EG(o)->Width - 59) >> 1;
     rend_y = EG(o)->TopEdge + ((EG(o)->Height - 9) >> 1);
 
     {
         /* Rewind */
+        if (data->tdd_Mode == BUT_REWIND)
+            pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHINEPEN];
+        else
+            pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHADOWPEN];
+        SetAPen(msg->gpr_RPort, pen);
 
         RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x, rend_y + 5 , EG(o)->LeftEdge + rend_x + 1, rend_y + 5);
         RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 2, rend_y + 4 , EG(o)->LeftEdge + rend_x + 3, rend_y + 6);
@@ -299,9 +303,14 @@ IPTR TapeDeck__GM_RENDER(Class *cl, Object *o, struct gpRender *msg)
         RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 6, rend_y + 2 , EG(o)->LeftEdge + rend_x + 7, rend_y + 8);
         RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 8, rend_y + 1 , EG(o)->LeftEdge + rend_x + 9, rend_y + 9);
     }
-    
+
     {
         /* Play */
+        if (data->tdd_Mode == BUT_PLAY)
+            pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHINEPEN];
+        else
+            pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHADOWPEN];
+        SetAPen(msg->gpr_RPort, pen);
 
         rend_x += 16;
 
@@ -315,6 +324,11 @@ IPTR TapeDeck__GM_RENDER(Class *cl, Object *o, struct gpRender *msg)
 
     {
         /* Fast Forward */
+        if (data->tdd_Mode == BUT_FORWARD)
+            pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHINEPEN];
+        else
+            pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHADOWPEN];
+        SetAPen(msg->gpr_RPort, pen);
 
         rend_x += 14;
 
