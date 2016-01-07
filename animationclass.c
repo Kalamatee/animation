@@ -752,7 +752,7 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
 {
     struct Animation_Data *animd = INST_DATA (cl, (Object *)g);
     struct IBox *gadBox;
-    IPTR RetVal;
+    IPTR RetVal, totalheight;
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
@@ -762,6 +762,7 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
     RetVal = DoSuperMethodA(cl, (Object *)g, (Msg)msg);
 
     GetAttr(DTA_Domain, (Object *)g, (IPTR *)&gadBox);
+    totalheight = animd->ad_BitMapHeader.bmh_Height;
 
     // propogate our known dimensions to the tapedeck ..
     if (animd->ad_Tapedeck)
@@ -776,7 +777,7 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
         };
 
         GetAttr(GA_Height, (Object *)animd->ad_Tapedeck, (IPTR *)&tdAttrs[3].ti_Data);
-
+        totalheight += tdAttrs[3].ti_Data;
         D(bug("[animation.datatype]: %s: tapedeck height = %d\n", __PRETTY_FUNCTION__, tdAttrs[3].ti_Data));
 
         animd->ad_Flags |= ANIMDF_SHOWPANEL;
@@ -809,12 +810,20 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
             GM_LAYOUT, (IPTR)msg->gpl_GInfo, (IPTR)msg->gpl_Initial);
     }
 
-#if (0)
-    NotifyAttrChanges((Object *) g, msg->gpl_GInfo, 0,
-   				 GA_ID, g->GadgetID,
-   				 DTA_Busy, TRUE,
-   				 TAG_DONE);
-#endif
+    {
+        struct TagItem notifyAttrs[] =
+        {
+            { GA_ID,            g->GadgetID                             },
+            { DTA_Busy,         FALSE                                   },
+            { DTA_TotalHoriz,   animd->ad_BitMapHeader.bmh_Width        },
+            { DTA_VisibleHoriz, gadBox->Width                           },
+            { DTA_TotalVert,    totalheight                             },
+            { DTA_VisibleVert,  gadBox->Height                          },
+            { TAG_DONE,         0                                       }
+        };
+
+        DoMethod((Object *) g, OM_NOTIFY, notifyAttrs, (IPTR) msg->gpl_GInfo, 0);
+    }
 
     if (animd->ad_Flags & ANIMDF_IMMEDIATE)
     {
@@ -864,7 +873,7 @@ IPTR DT_Render(struct IClass *cl, struct Gadget *g, struct gpRender *msg)
 
     if (animd->ad_FrameBuffer)
     {
-        BltBitMapRastPort(animd->ad_FrameBuffer, 0, 0, msg->gpr_RPort, gadBox->Left, gadBox->Top, fillwidth, fillheight, 0xC0);
+        BltBitMapRastPort(animd->ad_FrameBuffer, animd->ad_HorizTop, animd->ad_VertTop, msg->gpr_RPort, gadBox->Left, gadBox->Top, fillwidth, fillheight, 0xC0);
     }
     else
     {
