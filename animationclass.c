@@ -41,6 +41,11 @@ extern AROS_UFP3(ULONG, playerHookFunc,
     AROS_UFPA(struct Player *, obj, A2),
     AROS_UFPA(struct pmTime *, msg, A1));
 
+extern AROS_UFP3(void, playerProc,
+    AROS_UFPA(STRPTR, argPtr, A0),
+    AROS_UFPA(ULONG, argSize, D0),
+    AROS_UFPA(struct ExecBase *, SysBase, A6));
+
 ADD2LIBS("realtime.library", 0, struct Library *, RealTimeBase);
 ADD2LIBS("gadgets/tapedeck.gadget", 0, struct Library *, TapeDeckBase);
 
@@ -95,6 +100,52 @@ struct DTMethod SupportedTriggerMethods[] =
 };
 
 /*** PRIVATE METHODS ***/
+IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
+{
+    struct Animation_Data *animd = INST_DATA (cl, g);
+    struct TagItem playertags[] =
+    {
+        { PLAYER_Name,          (IPTR) "animation"      },
+        { PLAYER_Conductor,     (IPTR) "playback"       },
+        { PLAYER_Priority,      0                       },
+        { PLAYER_Hook,          0                       },
+        { TAG_DONE,             0                       }
+    };
+
+    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    if (!animd->ad_Player)
+    {
+        /* create a realtime player */
+        animd->ad_PlayerHook.h_Entry = (HOOKFUNC)playerHookFunc; 
+        animd->ad_PlayerHook.h_Data = animd;
+        playertags[3].ti_Data = (IPTR)&animd->ad_PlayerHook;
+        animd->ad_Player = CreatePlayerA(playertags);
+    }
+    D(bug("[animation.datatype] %s: Realtime Player @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_Player));
+
+    if (!animd->ad_PlayerData)
+    {
+        animd->ad_PlayerData = AllocMem(sizeof(struct ProcessPrivate), MEMF_ANY);
+        animd->ad_PlayerData->pp_Object = (Object *)g;
+        animd->ad_PlayerData->pp_Data = animd;
+    }
+
+    if (!animd->ad_PlayerProc)
+    {
+        animd->ad_PlayerProc = CreateNewProcTags(
+                            NP_Entry,       (IPTR)playerProc,
+                            NP_Name,        (IPTR)"Animation Playback",
+                            NP_Synchronous, FALSE,
+                            NP_UserData,    (IPTR)animd->ad_PlayerData,
+                            NP_StackSize,   40000,
+                            TAG_DONE);
+    }
+    D(bug("[animation.datatype] %s: Playback Process @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_PlayerProc));
+
+    return 1;
+}
+
 IPTR DT_FreePens(struct IClass *cl, struct Gadget *g, Msg msg)
 {
     struct Animation_Data *animd = INST_DATA (cl, g);
@@ -192,14 +243,35 @@ IPTR DT_AllocBuffer(struct IClass *cl, struct Gadget *g, struct privAllocBuffer 
     return (IPTR)animd->ad_FrameBuffer;
 }
 
-IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, Msg msg)
+IPTR DT_RenderBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer *msg)
 {
     struct Animation_Data *animd = INST_DATA (cl, g);
+
+    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    if (msg->Source)
+    {
+        if ((animd->ad_NumColors > 0) && (animd->ad_Flags & ANIMDF_REMAP))
+        {
+            DoMethod((Object *)g, PRIVATE_REMAPBUFFER, msg->Source);
+        }
+        else
+            BltBitMap(msg->Source, 0, 0, animd->ad_FrameBuffer, 0, 0, animd->ad_BitMapHeader.bmh_Width, animd->ad_BitMapHeader.bmh_Height, 0xC0, 0xFF, NULL);
+    }
+    
+    return (IPTR)1;
+}
+
+IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer *msg)
+{
+    struct Animation_Data *animd = INST_DATA (cl, g);
+    struct RastPort remapRP, targetRP;
     struct TagItem bestpenTags[] =
     {
         { OBP_Precision,        PRECISION_IMAGE },
         { TAG_DONE,             0               }
     };
+    UBYTE *tmpline;
     ULONG curpen;
     int i, x;
 
@@ -207,7 +279,7 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, Msg msg)
 
     if (animd->ad_Window)
     {
-        if (animd->ad_NumColors > 0)
+        if ((animd->ad_NumColors > 0) && !(animd->ad_Flags & ANIMDF_REMAPPEDPENS))
         {
             animd->ad_ColorMap = animd->ad_Window->WScreen->ViewPort.ColorMap;
             D(bug("[animation.datatype] %s: colormap @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorMap));
@@ -228,32 +300,27 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, Msg msg)
                 animd->ad_ColorTable[i] = animd->ad_Allocated[curpen];
                 animd->ad_ColorTable2[i] = animd->ad_Allocated[curpen];
             }
+            animd->ad_Flags |= ANIMDF_REMAPPEDPENS;
         }
 
-        if (animd->ad_KeyFrame)
+        // remap the source ..
+        if ((tmpline = AllocVec(animd->ad_BitMapHeader.bmh_Width, MEMF_ANY)) != NULL)
         {
-            if (animd->ad_NumColors > 0)
+            InitRastPort(&remapRP);
+            InitRastPort(&targetRP);
+            remapRP.BitMap = msg->Source;
+            targetRP.BitMap = animd->ad_FrameBuffer;
+            for(i = 0; i < animd->ad_BitMapHeader.bmh_Height; i++)
             {
-                struct RastPort remapRP, targetRP;
-                UBYTE *tmpline = AllocVec(animd->ad_BitMapHeader.bmh_Width, MEMF_ANY);
-                InitRastPort(&remapRP);
-                InitRastPort(&targetRP);
-                remapRP.BitMap = animd->ad_KeyFrame;
-                targetRP.BitMap = animd->ad_FrameBuffer;
-                for(i = 0; i < animd->ad_BitMapHeader.bmh_Height; i++)
+                ReadPixelLine8(&remapRP,0,i,animd->ad_BitMapHeader.bmh_Width,tmpline,NULL);
+                for(x = 0; x < animd->ad_BitMapHeader.bmh_Width; x++)
                 {
-                    ReadPixelLine8(&remapRP,0,i,animd->ad_BitMapHeader.bmh_Width,tmpline,NULL);
-                    for(x = 0; x < animd->ad_BitMapHeader.bmh_Width; x++)
-                    {
-                        curpen = tmpline[x];
-                        tmpline[x] = animd->ad_ColorTable2[curpen];
-                    }
-                    WritePixelLine8(&targetRP,0,i,animd->ad_BitMapHeader.bmh_Width,tmpline,NULL);
+                    curpen = tmpline[x];
+                    tmpline[x] = animd->ad_ColorTable2[curpen];
                 }
-                FreeVec(tmpline);
+                WritePixelLine8(&targetRP,0,i,animd->ad_BitMapHeader.bmh_Width,tmpline,NULL);
             }
-            else
-                BltBitMap(animd->ad_KeyFrame, 0, 0, animd->ad_FrameBuffer, 0, 0, animd->ad_BitMapHeader.bmh_Width, animd->ad_BitMapHeader.bmh_Height, 0xC0, 0xFF, NULL);
+            FreeVec(tmpline);
         }
     }
     return 1;
@@ -303,6 +370,7 @@ IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
 
     case ADTA_Frame:
         D(bug("[animation.datatype] %s: ADTA_Frame\n", __PRETTY_FUNCTION__));
+        *msg->opg_Storage = (IPTR) animd->ad_FrameCurrent;
         break;
 
     case ADTA_FramesPerSecond:
@@ -529,6 +597,11 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
         case ADTA_FramesPerSecond:
             D(bug("[animation.datatype] %s: ADTA_FramesPerSecond (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
             animd->ad_FramesPerSec = (UWORD) tag->ti_Data;
+            if (animd->ad_FramesPerSec == 0)
+                animd->ad_FramesPerSec = 1;
+            else if (animd->ad_FramesPerSec > 60)
+                animd->ad_FramesPerSec = 60;
+            animd->ad_TicksPerFrame = (TICK_FREQ / animd->ad_FramesPerSec);
             break;
 
         case SDTA_Sample:
@@ -648,14 +721,6 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
         { GA_Height, 15},
         { TAG_DONE, 0}
     };
-    struct TagItem playertags[] =
-    {
-        { PLAYER_Name,          (IPTR) "animation"      },
-        { PLAYER_Conductor,     (IPTR) "playback"       },
-        { PLAYER_Priority,      0                       },
-        { PLAYER_Hook,          0                       },
-        { TAG_DONE,             0                       }
-    };
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
@@ -670,6 +735,9 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
 #if (1)
         animd->ad_Flags |= ANIMDF_IMMEDIATE;
 #endif
+        animd->ad_FramesPerSec = 60;
+        animd->ad_TicksPerFrame = TICK_FREQ / animd->ad_FramesPerSec;
+
         if (msg->ops_AttrList)
         {
             D(bug("[animation.datatype] %s: Setting attributes.. \n", __PRETTY_FUNCTION__));
@@ -683,14 +751,7 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
             D(bug("[animation.datatype] %s: Tapedeck @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_Tapedeck));
         }
 
-        /* create a realtime player */
-        animd->ad_PlayerHook.h_Entry = &HookEntry; 
-        animd->ad_PlayerHook.h_SubEntry = (HOOKFUNC)playerHookFunc;
-        playertags[3].ti_Data = (IPTR)&animd->ad_PlayerHook;
-        if ((animd->ad_Player = CreatePlayerA(playertags)) != NULL)
-        {
-            D(bug("[animation.datatype] %s: Realtime Player @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_Player));
-        }
+        DT_InitPlayer(cl, g, (Msg) msg);
     }
 
     D(bug("[animation.datatype] %s: returning %p\n", __PRETTY_FUNCTION__, g));
@@ -706,6 +767,14 @@ IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
 
     if (animd->ad_Player)
         DeletePlayer(animd->ad_Player);
+
+    if (animd->ad_PlayerProc)
+    {
+        Signal((struct Task *)animd->ad_PlayerProc, SIGBREAKF_CTRL_C);
+
+        while (animd->ad_PlayerProc)
+            Delay (1);
+    }
 
     DoMethod(o, PRIVATE_FREECOLORTABLES);
 
@@ -865,9 +934,9 @@ IPTR DT_Render(struct IClass *cl, struct Gadget *g, struct gpRender *msg)
 
         DoMethod((Object *)g, PRIVATE_ALLOCBUFFER, msg->gpr_RPort->BitMap, bmdepth);
 
-        if ((animd->ad_KeyFrame) && (animd->ad_Flags & ANIMDF_REMAP))
+        if (animd->ad_KeyFrame)
         {
-            DoMethod((Object *)g, PRIVATE_REMAPBUFFER);
+            DoMethod((Object *)g, PRIVATE_RENDERBUFFER, animd->ad_KeyFrame);
         }
     }
 

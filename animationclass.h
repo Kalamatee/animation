@@ -18,14 +18,19 @@
 #define	ANIMDF_SMARTSKIP        (1 << 5)
 #define	ANIMDF_ADJUSTPALETTE    (1 << 6)
 // special flags used by rendering/layout code
-#define ANIMDF_DOREMAP          (1 << 30)               
+#define ANIMDF_REMAPPEDPENS     (1 << 30)               
 #define ANIMDF_SHOWPANEL        (1 << 31)
+
+struct ProcessPrivate;
 
 struct Animation_Data
 {
     ULONG                       ad_Flags;               /* object control flags                 */
     UWORD                       ad_Frames;              /* # of frames                          */
+    UWORD                       ad_FrameCurrent;
     UWORD                       ad_FramesPerSec;
+    UWORD                       ad_TicksPerFrame; /* TICK_FREQ / ad_FramesPerSec */
+    UWORD                       ad_Tick;
     struct BitMap               *ad_KeyFrame;
     struct BitMap               *ad_FrameBuffer;        /* currently displayed frame            */
     UWORD                       ad_pad0;
@@ -49,14 +54,25 @@ struct Animation_Data
     UBYTE			*ad_ColorTable2;
     UBYTE			*ad_Allocated;          /* pens we have actually allocated      */
     struct Player               *ad_Player;
+    struct Process              *ad_PlayerProc;         /* playback process */
+    struct ProcessPrivate       *ad_PlayerData;
     struct Hook                 ad_PlayerHook;
+    UBYTE                       ad_PlayerTick;
 };
 
-#define PRIVATE_ALLOCCOLORTABLES        (0x0808000000 + 1)
-#define PRIVATE_FREECOLORTABLES         (0x0808000000 + 2) 
-#define PRIVATE_FREEPENS                (0x0808000000 + 3)             
-#define PRIVATE_ALLOCBUFFER             (0x0808000000 + 4)
-#define PRIVATE_REMAPBUFFER             (0x0808000000 + 5)
+struct ProcessPrivate
+{
+    Object                      *pp_Object;
+    struct Animation_Data       *pp_Data;
+};
+
+#define PRIVATE_INITPLAYER              (0x0808000000 + 1)
+#define PRIVATE_ALLOCCOLORTABLES        (0x0808000000 + 2)
+#define PRIVATE_FREECOLORTABLES         (0x0808000000 + 3) 
+#define PRIVATE_FREEPENS                (0x0808000000 + 4)             
+#define PRIVATE_ALLOCBUFFER             (0x0808000000 + 5)
+#define PRIVATE_RENDERBUFFER            (0x0808000000 + 6)
+#define PRIVATE_REMAPBUFFER             (0x0808000000 + 7)
 
 struct privAllocColorTables
 {
@@ -64,9 +80,17 @@ struct privAllocColorTables
     STACKED ULONG NumColors;
 };
 
+
 struct privAllocBuffer
 {
     STACKED ULONG MethodID;
     STACKED struct BitMap *Friend;
     STACKED UBYTE Depth;
+};
+
+
+struct privRenderBuffer
+{
+    STACKED ULONG MethodID;
+    STACKED struct BitMap *Source;
 };
