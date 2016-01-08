@@ -55,10 +55,12 @@ struct Animation_Data
     UBYTE			*ad_ColorTable2;
     UBYTE			*ad_Allocated;          /* pens we have actually allocated      */
     struct Player               *ad_Player;
-    struct Process              *ad_PlayerProc;         /* playback process */
     struct ProcessPrivate       *ad_PlayerData;
+    struct Process              *ad_BufferProc;         /* buffering process */
+    struct Process              *ad_PlayerProc;         /* playback process */
     struct Hook                 ad_PlayerHook;
-    UBYTE                       ad_PlayerTick;
+    UBYTE                       ad_LoadFrames;          /* signal frames need to be loaded */
+    UBYTE                       ad_PlayerTick;          /* signal frames needs to change */
     struct List                 ad_AnimFrames;
 };
 

@@ -40,6 +40,11 @@ extern AROS_UFP3(ULONG, playerHookFunc,
     AROS_UFPA(struct Player *, obj, A2),
     AROS_UFPA(struct pmTime *, msg, A1));
 
+extern AROS_UFP3(void, bufferProc,
+    AROS_UFPA(STRPTR, argPtr, A0),
+    AROS_UFPA(ULONG, argSize, D0),
+    AROS_UFPA(struct ExecBase *, SysBase, A6));
+
 extern AROS_UFP3(void, playerProc,
     AROS_UFPA(STRPTR, argPtr, A0),
     AROS_UFPA(ULONG, argSize, D0),
@@ -129,6 +134,18 @@ IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
         animd->ad_PlayerData->pp_Object = (Object *)g;
         animd->ad_PlayerData->pp_Data = animd;
     }
+
+    if (!animd->ad_BufferProc)
+    {
+        animd->ad_BufferProc = CreateNewProcTags(
+                            NP_Entry,       (IPTR)bufferProc,
+                            NP_Name,        (IPTR)"Animation Buffering",
+                            NP_Synchronous, FALSE,
+                            NP_UserData,    (IPTR)animd->ad_PlayerData,
+                            NP_StackSize,   40000,
+                            TAG_DONE);
+    }
+    D(bug("[animation.datatype] %s: Buffering Process @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_BufferProc));
 
     if (!animd->ad_PlayerProc)
     {
@@ -768,6 +785,14 @@ IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
 
     if (animd->ad_Player)
         DeletePlayer(animd->ad_Player);
+
+    if (animd->ad_BufferProc)
+    {
+        Signal((struct Task *)animd->ad_BufferProc, SIGBREAKF_CTRL_C);
+
+        while (animd->ad_BufferProc)
+            Delay (1);
+    }
 
     if (animd->ad_PlayerProc)
     {

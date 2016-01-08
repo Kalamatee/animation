@@ -117,7 +117,8 @@ AROS_UFH3(void, playerProc,
                             rendFrame->Source = curFrame->af_Frame.alf_BitMap;
                         else
                         {
-                            //we need to load frames ...
+                            if ((priv->pp_Data->ad_BufferProc) && (priv->pp_Data->ad_LoadFrames))
+                                Signal((struct Task *)priv->pp_Data->ad_BufferProc, priv->pp_Data->ad_LoadFrames);
 
                             if ((prevFrame) && (prevFrame->af_Frame.alf_BitMap))
                             {
@@ -158,6 +159,7 @@ AROS_UFH3(void, playerProc,
             }
             FreeSignal(priv->pp_Data->ad_PlayerTick);
         }
+        priv->pp_Data->ad_PlayerProc = NULL;
     }
 
     D(bug("[animation.datatype]: %s: exiting ...\n", __PRETTY_FUNCTION__));
