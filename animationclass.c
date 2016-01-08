@@ -28,7 +28,6 @@
 #include <intuition/gadgetclass.h>
 #include <intuition/cghooks.h>
 #include <datatypes/datatypesclass.h>
-#include <datatypes/animationclass.h>
 #include <cybergraphx/cybergraphics.h>
 #include <libraries/realtime.h>
 
@@ -730,6 +729,8 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
         D(bug("[animation.datatype] %s: Created object 0x%p\n", __PRETTY_FUNCTION__, g));
 
         animd = (struct Animation_Data *) INST_DATA(cl, g);
+
+        NewList(&animd->ad_AnimFrames);
 
         animd->ad_Flags = ANIMDF_CONTROLPANEL|ANIMDF_REMAP;
 #if (1)

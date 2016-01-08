@@ -71,14 +71,15 @@ AROS_UFH3(void, playerProc,
     AROS_USERFUNC_INIT
 
     struct ProcessPrivate *priv = FindTask(NULL)->tc_UserData;
+    struct AnimFrame *curFrame = NULL, *prevFrame = NULL;
     struct gpRender gprMsg;
     struct TagItem attrtags[] =
     {
         { TAG_IGNORE,   0},
         { TAG_DONE,     0}
     };
-    ULONG signal;
     UWORD framelast = 0;
+    ULONG signal;
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
@@ -111,7 +112,24 @@ AROS_UFH3(void, playerProc,
                     {
                         struct privRenderBuffer *rendFrame = (struct privRenderBuffer *)&gprMsg;
                         rendFrame->MethodID = PRIVATE_RENDERBUFFER;
-                        rendFrame->Source = priv->pp_Data->ad_KeyFrame;
+
+                        if ((curFrame) && (curFrame->af_Frame.alf_BitMap))
+                            rendFrame->Source = curFrame->af_Frame.alf_BitMap;
+                        else
+                        {
+                            //we need to load frames ...
+
+                            if ((prevFrame) && (prevFrame->af_Frame.alf_BitMap))
+                            {
+                                priv->pp_Data->ad_FrameCurrent = framelast;
+                                rendFrame->Source = prevFrame->af_Frame.alf_BitMap;
+                            }
+                            else
+                            {
+                                priv->pp_Data->ad_FrameCurrent = 0;
+                                rendFrame->Source = priv->pp_Data->ad_KeyFrame;
+                            }
+                        }
 
                         // frame has changed ... render it ..
                         DoMethodA(priv->pp_Object, (Msg)&gprMsg);
@@ -133,6 +151,7 @@ AROS_UFH3(void, playerProc,
                                 DoGadgetMethodA(priv->pp_Object, priv->pp_Data->ad_Window, NULL, (Msg)&gprMsg);
                             }
                         }
+                        prevFrame = curFrame;
                         framelast = priv->pp_Data->ad_FrameCurrent;
                     }
                 }

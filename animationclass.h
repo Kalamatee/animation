@@ -5,6 +5,7 @@
 
 #include <graphics/gfx.h>
 #include <datatypes/pictureclass.h>
+#include <datatypes/animationclass.h>
 
 #define	MIN(a,b) (((a) < (b)) ?	(a) : (b))
 #define	MAX(a,b) (((a) > (b)) ?	(a) : (b))
@@ -58,12 +59,20 @@ struct Animation_Data
     struct ProcessPrivate       *ad_PlayerData;
     struct Hook                 ad_PlayerHook;
     UBYTE                       ad_PlayerTick;
+    struct List                 ad_AnimFrames;
 };
 
 struct ProcessPrivate
 {
     Object                      *pp_Object;
     struct Animation_Data       *pp_Data;
+};
+
+/* our nodes used to play the anim! */
+struct AnimFrame
+{
+    struct Node                 af_Node;
+    struct adtFrame             af_Frame;
 };
 
 #define PRIVATE_INITPLAYER              (0x0808000000 + 1)
