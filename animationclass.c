@@ -910,18 +910,6 @@ IPTR DT_Render(struct IClass *cl, struct Gadget *g, struct gpRender *msg)
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
-    GetAttr(DTA_Domain, (Object *)g, (IPTR *)&gadBox);
-
-    if (gadBox->Width > animd->ad_BitMapHeader.bmh_Width)
-        fillwidth = animd->ad_BitMapHeader.bmh_Width;
-    else
-        fillwidth = gadBox->Width;
-        
-    if (gadBox->Height > animd->ad_BitMapHeader.bmh_Height)
-        fillheight = animd->ad_BitMapHeader.bmh_Height;
-    else
-        fillheight = gadBox->Height;
-
     if (!animd->ad_FrameBuffer)
     {
         IPTR bmdepth;
@@ -940,6 +928,20 @@ IPTR DT_Render(struct IClass *cl, struct Gadget *g, struct gpRender *msg)
         }
     }
 
+    LockLayer(0, msg->gpr_GInfo->gi_Window->WLayer);
+
+    GetAttr(DTA_Domain, (Object *)g, (IPTR *)&gadBox);
+
+    if (gadBox->Width > animd->ad_BitMapHeader.bmh_Width)
+        fillwidth = animd->ad_BitMapHeader.bmh_Width;
+    else
+        fillwidth = gadBox->Width;
+        
+    if (gadBox->Height > animd->ad_BitMapHeader.bmh_Height)
+        fillheight = animd->ad_BitMapHeader.bmh_Height;
+    else
+        fillheight = gadBox->Height;
+
     if (animd->ad_FrameBuffer)
     {
         BltBitMapRastPort(animd->ad_FrameBuffer, animd->ad_HorizTop, animd->ad_VertTop, msg->gpr_RPort, gadBox->Left, gadBox->Top, fillwidth, fillheight, 0xC0);
@@ -955,6 +957,8 @@ IPTR DT_Render(struct IClass *cl, struct Gadget *g, struct gpRender *msg)
     {
         DoMethodA((Object *)animd->ad_Tapedeck, (Msg)msg);
     }
+
+    UnlockLayer(msg->gpr_GInfo->gi_Window->WLayer);
 
     return (IPTR)TRUE;
 }

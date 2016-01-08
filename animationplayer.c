@@ -37,7 +37,7 @@ AROS_UFH3(ULONG, playerHookFunc,
 	case PM_TICK:
             animd->ad_Tick++;
 
-            if (animd->ad_Tick > animd->ad_TicksPerFrame)
+            if (animd->ad_Tick >= animd->ad_TicksPerFrame)
             {
                 animd->ad_Tick = 0;
                 animd->ad_FrameCurrent++;
@@ -104,7 +104,7 @@ AROS_UFH3(void, playerProc,
                 {
                     D(bug("[animation.datatype]: %s: TICK (frame %d)\n", __PRETTY_FUNCTION__, priv->pp_Data->ad_FrameCurrent));
 
-                    if (priv->pp_Data->ad_FrameCurrent > priv->pp_Data->ad_Frames)
+                    if (priv->pp_Data->ad_FrameCurrent >= priv->pp_Data->ad_Frames)
                         priv->pp_Data->ad_FrameCurrent = 0;
 
                     if (priv->pp_Data->ad_FrameCurrent != framelast)
@@ -114,7 +114,7 @@ AROS_UFH3(void, playerProc,
                         rendFrame->Source = priv->pp_Data->ad_KeyFrame;
 
                         // frame has changed ... render it ..
-                        DoGadgetMethodA(priv->pp_Object, priv->pp_Data->ad_Window, NULL, (Msg)&gprMsg);
+                        DoMethodA(priv->pp_Object, (Msg)&gprMsg);
 
                         if (priv->pp_Data->ad_Tapedeck)
                         {
@@ -133,6 +133,7 @@ AROS_UFH3(void, playerProc,
                                 DoGadgetMethodA(priv->pp_Object, priv->pp_Data->ad_Window, NULL, (Msg)&gprMsg);
                             }
                         }
+                        framelast = priv->pp_Data->ad_FrameCurrent;
                     }
                 }
             }
