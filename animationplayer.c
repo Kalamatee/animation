@@ -12,6 +12,7 @@
 #include <proto/intuition.h>
 #include <proto/utility.h>
 #include <proto/realtime.h>
+#include <proto/layers.h>
 
 #include <intuition/gadgetclass.h>
 #include <libraries/realtime.h>
@@ -27,7 +28,7 @@ AROS_UFH3(ULONG, playerHookFunc,
     AROS_USERFUNC_INIT
  
     struct Animation_Data *animd = (struct Animation_Data *)hook->h_Data;
-    BOOL doTick = FALSE;
+    BOOL doTick = FALSE, doLoad = TRUE;
 #if (0)
     D(bug("[animation.datatype]: %s(%08x)\n", __PRETTY_FUNCTION__, msg->pmt_Method));
 #endif
@@ -36,6 +37,9 @@ AROS_UFH3(ULONG, playerHookFunc,
     {
 	case PM_TICK:
             animd->ad_Tick++;
+
+            if (animd->ad_PlayerData->pp_BufferLevel < animd->ad_PlayerData->pp_BufferFrames)
+                doLoad = TRUE;
 
             if (animd->ad_Tick >= animd->ad_TicksPerFrame)
             {
@@ -54,6 +58,10 @@ AROS_UFH3(ULONG, playerHookFunc,
 	    break;
     }
 
+#if (0)
+    if (doLoad && (animd->ad_BufferProc) && (animd->ad_LoadFrames))
+        Signal((struct Task *)animd->ad_BufferProc, animd->ad_LoadFrames);
+#endif
     if (doTick && (animd->ad_PlayerProc) && (animd->ad_PlayerTick))
         Signal((struct Task *)animd->ad_PlayerProc, animd->ad_PlayerTick);
 
@@ -106,15 +114,40 @@ AROS_UFH3(void, playerProc,
                     D(bug("[animation.datatype]: %s: TICK (frame %d)\n", __PRETTY_FUNCTION__, priv->pp_Data->ad_FrameCurrent));
 
                     if (priv->pp_Data->ad_FrameCurrent >= priv->pp_Data->ad_Frames)
+                    {
                         priv->pp_Data->ad_FrameCurrent = 0;
+                        curFrame = NULL;
+                    }
 
                     if (priv->pp_Data->ad_FrameCurrent != framelast)
                     {
                         struct privRenderBuffer *rendFrame = (struct privRenderBuffer *)&gprMsg;
                         rendFrame->MethodID = PRIVATE_RENDERBUFFER;
 
+                        ObtainSemaphoreShared(&priv->pp_Data->ad_AnimFramesLock);
+
+                        if ((!prevFrame) || (priv->pp_Data->ad_FrameCurrent == 0))
+                            curFrame=GetHead(&priv->pp_Data->ad_AnimFrames);
+                        else
+                            curFrame = prevFrame;
+
+                        if (priv->pp_Data->ad_FrameCurrent > 0)
+                        {
+                            while ((curFrame = GetSucc(curFrame)) != NULL)
+                            {
+                                if (curFrame->af_Frame.alf_Frame == priv->pp_Data->ad_FrameCurrent)
+                                    break;
+                            }
+                        }
+
+                        ReleaseSemaphore(&priv->pp_Data->ad_AnimFramesLock);
+
                         if ((curFrame) && (curFrame->af_Frame.alf_BitMap))
+                        {
                             rendFrame->Source = curFrame->af_Frame.alf_BitMap;
+                            D(bug("[animation.datatype]: %s: Rendering Frame @ 0x%p\n", __PRETTY_FUNCTION__, curFrame));
+                            D(bug("[animation.datatype]: %s: #%d BitMap @ 0x%p\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_Frame, curFrame->af_Frame.alf_BitMap));
+                        }
                         else
                         {
                             if ((priv->pp_Data->ad_BufferProc) && (priv->pp_Data->ad_LoadFrames))
@@ -135,22 +168,22 @@ AROS_UFH3(void, playerProc,
                         // frame has changed ... render it ..
                         DoMethodA(priv->pp_Object, (Msg)&gprMsg);
 
-                        if (priv->pp_Data->ad_Tapedeck)
+                        if ((priv->pp_Data->ad_Tapedeck) && (priv->pp_Data->ad_Window))
                         {
                             // update the tapedeck gadget..
                             attrtags[0].ti_Tag = TDECK_CurrentFrame;
                             attrtags[0].ti_Data = priv->pp_Data->ad_FrameCurrent;
-                            SetAttrsA((Object *)priv->pp_Data->ad_Tapedeck, attrtags);
 
-                            if (priv->pp_Data->ad_Window)
-                            {
-                                // tell the top level gadget to redraw...
-                                gprMsg.MethodID   = GM_RENDER;
-                                gprMsg.gpr_RPort  = priv->pp_Data->ad_Window->RPort;
-                                gprMsg.gpr_GInfo  = NULL;
-                                gprMsg.gpr_Redraw = 0;
-                                DoGadgetMethodA(priv->pp_Object, priv->pp_Data->ad_Window, NULL, (Msg)&gprMsg);
-                            }
+                            LockLayer(0, priv->pp_Data->ad_Window->WLayer);
+                            SetAttrsA((Object *)priv->pp_Data->ad_Tapedeck, attrtags);
+                            UnlockLayer(priv->pp_Data->ad_Window->WLayer);
+
+                            // tell the top level gadget to redraw...
+                            gprMsg.MethodID   = GM_RENDER;
+                            gprMsg.gpr_RPort  = priv->pp_Data->ad_Window->RPort;
+                            gprMsg.gpr_GInfo  = NULL;
+                            gprMsg.gpr_Redraw = 0;
+                            DoGadgetMethodA(priv->pp_Object, priv->pp_Data->ad_Window, NULL, (Msg)&gprMsg);
                         }
                         prevFrame = curFrame;
                         framelast = priv->pp_Data->ad_FrameCurrent;

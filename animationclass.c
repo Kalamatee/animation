@@ -133,6 +133,9 @@ IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
         animd->ad_PlayerData = AllocMem(sizeof(struct ProcessPrivate), MEMF_ANY);
         animd->ad_PlayerData->pp_Object = (Object *)g;
         animd->ad_PlayerData->pp_Data = animd;
+        animd->ad_PlayerData->pp_BufferFrames = 3 * animd->ad_FramesPerSec;
+        animd->ad_PlayerData->pp_BufferLevel = 0;
+        InitSemaphore(&animd->ad_AnimFramesLock);
     }
 
     if (!animd->ad_BufferProc)
@@ -618,6 +621,10 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
             else if (animd->ad_FramesPerSec > 60)
                 animd->ad_FramesPerSec = 60;
             animd->ad_TicksPerFrame = (TICK_FREQ / animd->ad_FramesPerSec);
+            if (animd->ad_PlayerData)
+            {
+                animd->ad_PlayerData->pp_BufferFrames = 3 * animd->ad_FramesPerSec;
+            }
             break;
 
         case SDTA_Sample:
@@ -775,6 +782,19 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
     D(bug("[animation.datatype] %s: returning %p\n", __PRETTY_FUNCTION__, g));
 
     return (IPTR)g;
+}
+
+IPTR DT_RemoveDTObject(struct IClass *cl, Object *o, Msg msg)
+{
+    struct Animation_Data *animd = INST_DATA (cl, o);
+
+    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+
+    DoMethod(o, ADTM_STOP);
+
+#warning TODO: wait for the buffer/player processes to finish 
+
+    return DoSuperMethodA(cl, o, msg);
 }
 
 IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
@@ -1013,12 +1033,6 @@ IPTR DT_Copy(struct IClass *cl, struct Gadget *g, struct opSet *msg)
     return NULL;
 }
 
-IPTR DT_RemoveDTObject(struct IClass *cl, struct Gadget *g, struct opSet *msg)
-{
-    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
-    return NULL;
-}
-
 IPTR DT_Trigger(struct IClass *cl, struct Gadget *g, struct opSet *msg)
 {
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
@@ -1052,6 +1066,7 @@ IPTR DT_Pause(struct IClass *cl, struct Gadget *g, struct opSet *msg)
         };
         SetAttrsA((Object *)animd->ad_Tapedeck, tdAttrs);
     }
+    SetConductorState (animd->ad_Player, CONDSTATE_PAUSED, animd->ad_FrameCurrent * animd->ad_TicksPerFrame);
 
     return NULL;
 }
@@ -1071,7 +1086,7 @@ IPTR DT_Start(struct IClass *cl, struct Gadget *g, struct adtStart *msg)
         };
         SetAttrsA((Object *)animd->ad_Tapedeck, tdAttrs);
     }
-    SetConductorState(animd->ad_Player, CONDSTATE_RUNNING, msg->asa_Frame);
+    SetConductorState(animd->ad_Player, CONDSTATE_RUNNING, msg->asa_Frame * animd->ad_TicksPerFrame);
 
     return NULL;
 }
@@ -1091,6 +1106,7 @@ IPTR DT_Stop(struct IClass *cl, struct Gadget *g, struct opSet *msg)
         };
         SetAttrsA((Object *)animd->ad_Tapedeck, tdAttrs);
     }
+    SetConductorState(animd->ad_Player, CONDSTATE_STOPPED, 0);
 
     return NULL;
 }

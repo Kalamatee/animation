@@ -30,7 +30,7 @@ struct Animation_Data
     UWORD                       ad_Frames;              /* # of frames                          */
     UWORD                       ad_FrameCurrent;
     UWORD                       ad_FramesPerSec;
-    UWORD                       ad_TicksPerFrame; /* TICK_FREQ / ad_FramesPerSec */
+    UWORD                       ad_TicksPerFrame;       /* TICK_FREQ / ad_FramesPerSec */
     UWORD                       ad_Tick;
     struct BitMap               *ad_KeyFrame;
     struct BitMap               *ad_FrameBuffer;        /* currently displayed frame            */
@@ -61,6 +61,7 @@ struct Animation_Data
     struct Hook                 ad_PlayerHook;
     UBYTE                       ad_LoadFrames;          /* signal frames need to be loaded */
     UBYTE                       ad_PlayerTick;          /* signal frames needs to change */
+    struct SignalSemaphore      ad_AnimFramesLock;
     struct List                 ad_AnimFrames;
 };
 
@@ -68,7 +69,14 @@ struct ProcessPrivate
 {
     Object                      *pp_Object;
     struct Animation_Data       *pp_Data;
+    ULONG                       pp_PlayerFlags;
+    ULONG                       pp_BufferFlags;
+    ULONG                       pp_BufferFrames;       /* no of frames to buffer */
+    ULONG                       pp_BufferLevel;        /* no of frames buffered */
+
 };
+
+#define PRIVPROCF_ENABLED       (1 << 0)
 
 /* our nodes used to play the anim! */
 struct AnimFrame
