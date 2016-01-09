@@ -620,7 +620,7 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
                 animd->ad_FramesPerSec = 1;
             else if (animd->ad_FramesPerSec > 60)
                 animd->ad_FramesPerSec = 60;
-            animd->ad_TicksPerFrame = (TICK_FREQ / animd->ad_FramesPerSec);
+            animd->ad_TicksPerFrame = (ANIMPLAYER_TICKFREQ / animd->ad_FramesPerSec);
             if (animd->ad_PlayerData)
             {
                 animd->ad_PlayerData->pp_BufferFrames = 3 * animd->ad_FramesPerSec;
@@ -761,7 +761,7 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
         animd->ad_Flags |= ANIMDF_IMMEDIATE;
 #endif
         animd->ad_FramesPerSec = 60;
-        animd->ad_TicksPerFrame = TICK_FREQ / animd->ad_FramesPerSec;
+        animd->ad_TicksPerFrame = ANIMPLAYER_TICKFREQ / animd->ad_FramesPerSec;
 
         if (msg->ops_AttrList)
         {
@@ -792,7 +792,7 @@ IPTR DT_RemoveDTObject(struct IClass *cl, Object *o, Msg msg)
 
     DoMethod(o, ADTM_STOP);
 
-#warning TODO: wait for the buffer/player processes to finish 
+#warning "TODO: wait for the buffer/player processes to finish"
 
     return DoSuperMethodA(cl, o, msg);
 }

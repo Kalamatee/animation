@@ -22,6 +22,19 @@
 #define ANIMDF_REMAPPEDPENS     (1 << 30)               
 #define ANIMDF_SHOWPANEL        (1 << 31)
 
+#if (0)
+// WE SHOULD BE USING THIS!!
+#define ANIMPLAYER_TICKFREQ     RealTimeBase->rtb_Reserved1
+#else
+#if (0)
+// AROS SAYS THIS IS THE FREQ BUT IT LIES!!
+#define ANIMPLAYER_TICKFREQ     TICK_FREQ
+#else
+// =(
+#define ANIMPLAYER_TICKFREQ     60
+#endif
+#endif
+
 struct ProcessPrivate;
 
 struct Animation_Data
