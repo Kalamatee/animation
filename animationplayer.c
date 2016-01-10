@@ -45,6 +45,8 @@ AROS_UFH3(ULONG, playerHookFunc,
             {
                 animd->ad_Tick = 0;
                 animd->ad_FrameCurrent++;
+                if (animd->ad_FrameCurrent >= animd->ad_Frames)
+                    animd->ad_FrameCurrent = 0;
                 doTick = TRUE;
             }
 	    break;
@@ -86,7 +88,7 @@ AROS_UFH3(void, playerProc,
         { TAG_IGNORE,   0},
         { TAG_DONE,     0}
     };
-    UWORD framelast = 0;
+    UWORD frame = 0, framelast = 0;
     ULONG signal;
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
@@ -95,6 +97,10 @@ AROS_UFH3(void, playerProc,
     {
         D(bug("[animation.datatype] %s: private data @ 0x%p\n", __PRETTY_FUNCTION__, priv));
         D(bug("[animation.datatype] %s: dt obj @ 0x%p, instance data @ 0x%p\n", __PRETTY_FUNCTION__, priv->pp_Object, priv->pp_Data));
+
+        ObtainSemaphore(&priv->pp_FlagsLock);
+        priv->pp_PlayerFlags |= PRIVPROCF_RUNNING;
+        ReleaseSemaphore(&priv->pp_FlagsLock);
 
         if ((priv->pp_Data->ad_PlayerTick = AllocSignal(-1)) != 0)
         {
@@ -109,33 +115,28 @@ AROS_UFH3(void, playerProc,
                 if (signal & SIGBREAKF_CTRL_C)
                     break;
 
-                if (signal & priv->pp_Data->ad_PlayerTick)
+                if ((priv->pp_PlayerFlags & PRIVPROCF_ENABLED) && (signal & priv->pp_Data->ad_PlayerTick))
                 {
-                    D(bug("[animation.datatype]: %s: TICK (frame %d)\n", __PRETTY_FUNCTION__, priv->pp_Data->ad_FrameCurrent));
+                    frame = priv->pp_Data->ad_FrameCurrent;
+                    D(bug("[animation.datatype]: %s: TICK (frame %d)\n", __PRETTY_FUNCTION__, frame));
 
-                    if (priv->pp_Data->ad_FrameCurrent >= priv->pp_Data->ad_Frames)
-                    {
-                        priv->pp_Data->ad_FrameCurrent = 0;
-                        curFrame = NULL;
-                    }
-
-                    if (priv->pp_Data->ad_FrameCurrent != framelast)
+                    if (frame != framelast)
                     {
                         struct privRenderBuffer *rendFrame = (struct privRenderBuffer *)&gprMsg;
                         rendFrame->MethodID = PRIVATE_RENDERBUFFER;
 
                         ObtainSemaphoreShared(&priv->pp_Data->ad_AnimFramesLock);
 
-                        if ((!prevFrame) || (priv->pp_Data->ad_FrameCurrent == 0))
+                        if ((!prevFrame) || (frame == 0))
                             curFrame=GetHead(&priv->pp_Data->ad_AnimFrames);
                         else
                             curFrame = prevFrame;
 
-                        if (priv->pp_Data->ad_FrameCurrent > 0)
+                        if (frame > 0)
                         {
                             while ((curFrame = GetSucc(curFrame)) != NULL)
                             {
-                                if (curFrame->af_Frame.alf_Frame == priv->pp_Data->ad_FrameCurrent)
+                                if (curFrame->af_Frame.alf_Frame == frame)
                                     break;
                             }
                         }
@@ -155,12 +156,12 @@ AROS_UFH3(void, playerProc,
 
                             if ((prevFrame) && (prevFrame->af_Frame.alf_BitMap))
                             {
-                                priv->pp_Data->ad_FrameCurrent = framelast;
+                                frame = framelast;
                                 rendFrame->Source = prevFrame->af_Frame.alf_BitMap;
                             }
                             else
                             {
-                                priv->pp_Data->ad_FrameCurrent = 0;
+                                frame = 0;
                                 rendFrame->Source = priv->pp_Data->ad_KeyFrame;
                             }
                         }
@@ -168,16 +169,16 @@ AROS_UFH3(void, playerProc,
                         // frame has changed ... render it ..
                         DoMethodA(priv->pp_Object, (Msg)&gprMsg);
 
-                        if ((priv->pp_Data->ad_Tapedeck) && (priv->pp_Data->ad_Window))
+                        if ((priv->pp_Data->ad_Window) && !(priv->pp_Data->ad_Flags & ANIMDF_LAYOUT))
                         {
-                            // update the tapedeck gadget..
-                            attrtags[0].ti_Tag = TDECK_CurrentFrame;
-                            attrtags[0].ti_Data = priv->pp_Data->ad_FrameCurrent;
+                            if (priv->pp_Data->ad_Tapedeck)
+                            {
+                                // update the tapedeck gadget..
+                                attrtags[0].ti_Tag = TDECK_CurrentFrame;
+                                attrtags[0].ti_Data = frame;
 
-                            LockLayer(0, priv->pp_Data->ad_Window->WLayer);
-                            SetAttrsA((Object *)priv->pp_Data->ad_Tapedeck, attrtags);
-                            UnlockLayer(priv->pp_Data->ad_Window->WLayer);
-
+                                SetAttrsA((Object *)priv->pp_Data->ad_Tapedeck, attrtags);
+                            }
                             // tell the top level gadget to redraw...
                             gprMsg.MethodID   = GM_RENDER;
                             gprMsg.gpr_RPort  = priv->pp_Data->ad_Window->RPort;
@@ -186,12 +187,15 @@ AROS_UFH3(void, playerProc,
                             DoGadgetMethodA(priv->pp_Object, priv->pp_Data->ad_Window, NULL, (Msg)&gprMsg);
                         }
                         prevFrame = curFrame;
-                        framelast = priv->pp_Data->ad_FrameCurrent;
+                        framelast = frame;
                     }
                 }
             }
             FreeSignal(priv->pp_Data->ad_PlayerTick);
         }
+        ObtainSemaphore(&priv->pp_FlagsLock);
+        priv->pp_PlayerFlags &= ~PRIVPROCF_RUNNING;
+        ReleaseSemaphore(&priv->pp_FlagsLock);
         priv->pp_Data->ad_PlayerProc = NULL;
     }
 

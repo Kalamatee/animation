@@ -136,9 +136,12 @@ IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
         animd->ad_PlayerData->pp_BufferFrames = 3 * animd->ad_FramesPerSec;
         animd->ad_PlayerData->pp_BufferLevel = 0;
         InitSemaphore(&animd->ad_AnimFramesLock);
+        InitSemaphore(&animd->ad_PlayerData->pp_FlagsLock);
+        animd->ad_PlayerData->pp_PlayerFlags = 0;
+        animd->ad_PlayerData->pp_BufferFlags = 0;
     }
 
-    if (!animd->ad_BufferProc)
+    if ((animd->ad_PlayerData) && !(animd->ad_BufferProc))
     {
         animd->ad_BufferProc = CreateNewProcTags(
                             NP_Entry,       (IPTR)bufferProc,
@@ -150,7 +153,7 @@ IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
     }
     D(bug("[animation.datatype] %s: Buffering Process @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_BufferProc));
 
-    if (!animd->ad_PlayerProc)
+    if ((animd->ad_PlayerData) && !(animd->ad_PlayerProc))
     {
         animd->ad_PlayerProc = CreateNewProcTags(
                             NP_Entry,       (IPTR)playerProc,
@@ -287,8 +290,8 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer
     struct RastPort remapRP, targetRP;
     struct TagItem bestpenTags[] =
     {
-        { OBP_Precision,        PRECISION_IMAGE },
-        { TAG_DONE,             0               }
+        { OBP_Precision,        animd->ad_PenPrecison   },
+        { TAG_DONE,             0                       }
     };
     UBYTE *tmpline;
     ULONG curpen;
@@ -537,6 +540,11 @@ IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
             *msg->opg_Storage = (IPTR) FALSE;
         break;
 #endif
+
+    case OBP_Precision:
+        *msg->opg_Storage = (IPTR) animd->ad_PenPrecison;
+        break;
+
     default:
         return DoSuperMethodA (cl, g, (Msg) msg);
     }
@@ -727,6 +735,9 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
                 animd->ad_Flags &= ~(ANIMDF_ADJUSTPALETTE);
             break;
 #endif
+        case OBP_Precision:
+            animd->ad_PenPrecison = (ULONG)tag->ti_Data;
+            break;
         }
     }
 
@@ -762,6 +773,7 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
 #endif
         animd->ad_FramesPerSec = 60;
         animd->ad_TicksPerFrame = ANIMPLAYER_TICKFREQ / animd->ad_FramesPerSec;
+        animd->ad_PenPrecison = PRECISION_IMAGE;
 
         if (msg->ops_AttrList)
         {
@@ -792,14 +804,37 @@ IPTR DT_RemoveDTObject(struct IClass *cl, Object *o, Msg msg)
 
     DoMethod(o, ADTM_STOP);
 
-#warning "TODO: wait for the buffer/player processes to finish"
+    if (animd->ad_PlayerData)
+    {
+        // disable our subprocesses ..
+        ObtainSemaphore(&animd->ad_PlayerData->pp_FlagsLock);
+        animd->ad_PlayerData->pp_BufferFlags &= ~PRIVPROCF_ENABLED;
+        animd->ad_PlayerData->pp_PlayerFlags &= ~PRIVPROCF_ENABLED;
+        ReleaseSemaphore(&animd->ad_PlayerData->pp_FlagsLock);
+        // wait for them to finish ...
+    }
 
     return DoSuperMethodA(cl, o, msg);
+}
+
+BOOL ProcIsAlive(struct ProcessPrivate *priv, volatile ULONG *flags)
+{
+    ULONG flag;
+
+    ObtainSemaphoreShared(&priv->pp_FlagsLock);
+    flag = *flags;
+    ReleaseSemaphore(&priv->pp_FlagsLock);
+
+    if (flag & PRIVPROCF_RUNNING)
+        return TRUE;
+
+    return FALSE;
 }
 
 IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
 {
     struct Animation_Data *animd = INST_DATA (cl, o);
+    struct AnimFrame *curFrame = NULL, *lastFrame = NULL;
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
@@ -810,16 +845,30 @@ IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
     {
         Signal((struct Task *)animd->ad_BufferProc, SIGBREAKF_CTRL_C);
 
-        while (animd->ad_BufferProc)
+        while (ProcIsAlive(animd->ad_PlayerData, &animd->ad_PlayerData->pp_BufferFlags))
+        {
             Delay (1);
+        }
     }
 
     if (animd->ad_PlayerProc)
     {
         Signal((struct Task *)animd->ad_PlayerProc, SIGBREAKF_CTRL_C);
 
-        while (animd->ad_PlayerProc)
+        while (ProcIsAlive(animd->ad_PlayerData, &animd->ad_PlayerData->pp_PlayerFlags))
+        {
             Delay (1);
+        }
+    }
+
+    if (animd->ad_PlayerData)
+        FreeMem(animd->ad_PlayerData, sizeof(struct ProcessPrivate));
+
+    ForeachNodeSafe(&animd->ad_AnimFrames, curFrame, lastFrame)
+    {
+        D(bug("[animation.datatype] %s: disposing of frame @ 0x%p\n", __PRETTY_FUNCTION__, curFrame));
+        Remove(&curFrame->af_Node);
+        FreeMem(curFrame, sizeof(struct AnimFrame));
     }
 
     DoMethod(o, PRIVATE_FREECOLORTABLES);
@@ -871,10 +920,19 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
+    animd->ad_Flags |= ANIMDF_LAYOUT;
+
     // cache the window pointer
     animd->ad_Window = msg->gpl_GInfo->gi_Window;
 
     RetVal = DoSuperMethodA(cl, (Object *)g, (Msg)msg);
+
+    if (animd->ad_PlayerData)
+    {
+        // enable our subprocesses ..
+        animd->ad_PlayerData->pp_BufferFlags |= PRIVPROCF_ENABLED;
+        animd->ad_PlayerData->pp_PlayerFlags |= PRIVPROCF_ENABLED;
+    }
 
     GetAttr(DTA_Domain, (Object *)g, (IPTR *)&gadBox);
     totalheight = animd->ad_BitMapHeader.bmh_Height;
@@ -924,6 +982,8 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
         DoMethod((Object *)animd->ad_Tapedeck,
             GM_LAYOUT, (IPTR)msg->gpl_GInfo, (IPTR)msg->gpl_Initial);
     }
+
+    animd->ad_Flags &= ~ANIMDF_LAYOUT;
 
     {
         struct TagItem notifyAttrs[] =

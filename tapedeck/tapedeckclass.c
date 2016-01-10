@@ -103,23 +103,11 @@ IPTR TapeDeck__OM_SET(Class *cl, Object *o, struct opSet *msg)
 	    case TDECK_Frames:
                 D(bug("[tapedeck.gadget] %s: TDECK_Frames - %d\n", __PRETTY_FUNCTION__, tag->ti_Data));
                 data->tdd_FrameCount = (ULONG)tag->ti_Data;
-                if (data->tdd_PosProp)
-                {
-                    attrtags[0].ti_Tag = PGA_Total;
-                    attrtags[0].ti_Data = tag->ti_Data;
-                    SetAttrsA((Object *)data->tdd_PosProp, attrtags);
-                }
 		break;
 
             case TDECK_CurrentFrame:
                 D(bug("[tapedeck.gadget] %s: TDECK_CurrentFrame - %d\n", __PRETTY_FUNCTION__, tag->ti_Data));
                 data->tdd_FrameCurrent = (ULONG)tag->ti_Data;
-                if (data->tdd_PosProp)
-                {
-                    attrtags[0].ti_Tag = PGA_Top;
-                    attrtags[0].ti_Data = tag->ti_Data;
-                    SetAttrsA((Object *)data->tdd_PosProp, attrtags);
-                }
 		break;
 
 	    case GA_Disabled:
@@ -262,6 +250,11 @@ IPTR TapeDeck__GM_LAYOUT(Class *cl, struct Gadget *g, struct gpLayout *msg)
 IPTR TapeDeck__GM_RENDER(Class *cl, Object *o, struct gpRender *msg)
 {
     struct TapeDeckData *data = INST_DATA(cl, o);
+    struct TagItem  	proptags[] = {
+        { PGA_Total,    data->tdd_FrameCount    },
+        { PGA_Top,      data->tdd_FrameCurrent  },
+        { TAG_DONE,     0UL 		        }
+    };
     LONG rend_x, rend_y;
     LONG pen;
 
@@ -276,6 +269,7 @@ IPTR TapeDeck__GM_RENDER(Class *cl, Object *o, struct gpRender *msg)
                        msg->gpr_GInfo->gi_DrInfo);
     }
 
+    SetAttrsA((Object *)data->tdd_PosProp, proptags);
     DoMethodA((Object *)data->tdd_PosProp, msg);
     
     rend_x = (EG(o)->Width - 59) >> 1;

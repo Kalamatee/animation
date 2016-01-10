@@ -19,21 +19,11 @@
 #define	ANIMDF_SMARTSKIP        (1 << 5)
 #define	ANIMDF_ADJUSTPALETTE    (1 << 6)
 // special flags used by rendering/layout code
+#define ANIMDF_LAYOUT           (1 << 29)               
 #define ANIMDF_REMAPPEDPENS     (1 << 30)               
 #define ANIMDF_SHOWPANEL        (1 << 31)
 
-#if (0)
-// WE SHOULD BE USING THIS!!
-#define ANIMPLAYER_TICKFREQ     RealTimeBase->rtb_Reserved1
-#else
-#if (0)
-// AROS SAYS THIS IS THE FREQ BUT IT LIES!!
-#define ANIMPLAYER_TICKFREQ     TICK_FREQ
-#else
-// =(
-#define ANIMPLAYER_TICKFREQ     60
-#endif
-#endif
+#define ANIMPLAYER_TICKFREQ     ((struct RealTimeBase *)RealTimeBase)->rtb_Reserved1
 
 struct ProcessPrivate;
 
@@ -67,6 +57,7 @@ struct Animation_Data
     UBYTE			*ad_ColorTable;
     UBYTE			*ad_ColorTable2;
     UBYTE			*ad_Allocated;          /* pens we have actually allocated      */
+    ULONG                       ad_PenPrecison;
     struct Player               *ad_Player;
     struct ProcessPrivate       *ad_PlayerData;
     struct Process              *ad_BufferProc;         /* buffering process */
@@ -82,14 +73,15 @@ struct ProcessPrivate
 {
     Object                      *pp_Object;
     struct Animation_Data       *pp_Data;
-    ULONG                       pp_PlayerFlags;
-    ULONG                       pp_BufferFlags;
+    struct SignalSemaphore      pp_FlagsLock;
+    volatile ULONG              pp_PlayerFlags;
+    volatile ULONG              pp_BufferFlags;
     ULONG                       pp_BufferFrames;       /* no of frames to buffer */
     ULONG                       pp_BufferLevel;        /* no of frames buffered */
-
 };
 
 #define PRIVPROCF_ENABLED       (1 << 0)
+#define PRIVPROCF_RUNNING       (1 << 1)
 
 /* our nodes used to play the anim! */
 struct AnimFrame
