@@ -89,7 +89,7 @@ AROS_UFH3(void, bufferProc,
                             {
                                 priv->pp_BufferLevel++;
                                 D(bug("[animation.datatype]: %s: Loaded! bitmap @ %p\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_BitMap));
-                                ObtainSemaphoreShared(&priv->pp_Data->ad_AnimFramesLock);
+                                ObtainSemaphore(&priv->pp_Data->ad_AnimFramesLock);
                                 AddTail(&priv->pp_Data->ad_AnimFrames, &curFrame->af_Node);
                                 ReleaseSemaphore(&priv->pp_Data->ad_AnimFramesLock);
                                 lastFrame =  curFrame;
