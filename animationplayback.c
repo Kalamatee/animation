@@ -139,17 +139,19 @@ AROS_UFH3(void, playerProc,
                         ObtainSemaphoreShared(&priv->pp_Data->ad_AnimFramesLock);
 
                         if ((!prevFrame) || (frame == 0))
-                            curFrame=GetHead(&priv->pp_Data->ad_AnimFrames);
+                            curFrame = (struct AnimFrame *)GetHead(&priv->pp_Data->ad_AnimFrames);
                         else
                             curFrame = prevFrame;
 
                         if (frame > 0)
                         {
-                            while ((curFrame = GetSucc(curFrame)) != NULL)
+                            while ((curFrame = (struct AnimFrame *)GetSucc(&curFrame->af_Node)) != NULL)
                             {
                                 if (curFrame->af_Frame.alf_Frame == frame)
                                     break;
                             }
+                            if (!(curFrame))
+                                curFrame = prevFrame;
                         }
 
                         ReleaseSemaphore(&priv->pp_Data->ad_AnimFramesLock);
@@ -167,7 +169,7 @@ AROS_UFH3(void, playerProc,
 
                             if ((prevFrame) && (prevFrame->af_Frame.alf_BitMap))
                             {
-                                frame = framelast;
+                                frame = prevFrame->af_Frame.alf_Frame;
                                 rendFrame->Source = prevFrame->af_Frame.alf_BitMap;
                             }
                             else
@@ -176,6 +178,8 @@ AROS_UFH3(void, playerProc,
                                 rendFrame->Source = priv->pp_Data->ad_KeyFrame;
                             }
                         }
+
+                        priv->pp_Data->ad_FrameCurrent = frame;
 
                         // frame has changed ... render it ..
                         DoMethodA(priv->pp_Object, (Msg)&gprMsg);
@@ -187,7 +191,7 @@ AROS_UFH3(void, playerProc,
                                 // update the tapedeck gadget..
                                 attrtags[0].ti_Tag = TDECK_CurrentFrame;
                                 attrtags[0].ti_Data = frame;
-                                attrtags[0].ti_Tag = TAG_IGNORE;
+                                attrtags[1].ti_Tag = TAG_IGNORE;
 
                                 SetAttrsA((Object *)priv->pp_Data->ad_Tapedeck, attrtags);
                             }

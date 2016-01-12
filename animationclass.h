@@ -96,13 +96,14 @@ struct AnimFrame
     struct adtFrame             af_Frame;
 };
 
-#define PRIVATE_INITPLAYER              (0x0808000000 + 1)
-#define PRIVATE_ALLOCCOLORTABLES        (0x0808000000 + 2)
-#define PRIVATE_FREECOLORTABLES         (0x0808000000 + 3) 
-#define PRIVATE_FREEPENS                (0x0808000000 + 4)             
-#define PRIVATE_ALLOCBUFFER             (0x0808000000 + 5)
-#define PRIVATE_RENDERBUFFER            (0x0808000000 + 6)
-#define PRIVATE_REMAPBUFFER             (0x0808000000 + 7)
+#define TAG_PRIVATE             	(ADTA_Dummy + 100)
+#define PRIVATE_INITPLAYER              (TAG_PRIVATE - 1)
+#define PRIVATE_ALLOCCOLORTABLES        (TAG_PRIVATE - 2)
+#define PRIVATE_FREECOLORTABLES         (TAG_PRIVATE - 3) 
+#define PRIVATE_FREEPENS                (TAG_PRIVATE - 4)             
+#define PRIVATE_ALLOCBUFFER             (TAG_PRIVATE - 5)
+#define PRIVATE_RENDERBUFFER            (TAG_PRIVATE - 6)
+#define PRIVATE_REMAPBUFFER             (TAG_PRIVATE - 7)
 
 struct privAllocColorTables
 {
