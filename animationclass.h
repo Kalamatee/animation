@@ -26,6 +26,7 @@
 #define ANIMPLAYER_TICKFREQ     ((struct RealTimeBase *)RealTimeBase)->rtb_Reserved1
 
 struct ProcessPrivate;
+BOOL ProcEnabled(struct ProcessPrivate *priv, volatile ULONG *flags, ULONG flag);
 
 struct Animation_Data
 {
@@ -67,6 +68,10 @@ struct Animation_Data
     UBYTE                       ad_PlayerTick;          /* signal frames needs to change */
     struct SignalSemaphore      ad_AnimFramesLock;
     struct List                 ad_AnimFrames;
+    UWORD                       ad_RenderLeft;
+    UWORD                       ad_RenderTop;
+    UWORD                       ad_RenderWidth;
+    UWORD                       ad_RenderHeight;
 };
 
 struct ProcessPrivate
@@ -82,6 +87,7 @@ struct ProcessPrivate
 
 #define PRIVPROCF_ENABLED       (1 << 0)
 #define PRIVPROCF_RUNNING       (1 << 1)
+#define PRIVPROCF_ACTIVE        (1 << 2)
 
 /* our nodes used to play the anim! */
 struct AnimFrame

@@ -21,7 +21,7 @@
 
 /*
     Process to handle loading/discarding (buffering) of  animation frames
-    realtime player & playback thread will signal us when needed.
+    realtime.library player & playback thread will signal us when needed.
 */
 
 AROS_UFH3(void, bufferProc,
@@ -35,12 +35,12 @@ AROS_UFH3(void, bufferProc,
     struct AnimFrame *curFrame = NULL, *lastFrame = NULL;
     ULONG signal;
 
-    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+    D(bug("[animation.datatype/BUFFER]: %s()\n", __PRETTY_FUNCTION__));
 
     if (priv)
     {
-        D(bug("[animation.datatype] %s: private data @ 0x%p\n", __PRETTY_FUNCTION__, priv));
-        D(bug("[animation.datatype] %s: dt obj @ 0x%p, instance data @ 0x%p\n", __PRETTY_FUNCTION__, priv->pp_Object, priv->pp_Data));
+        D(bug("[animation.datatype/BUFFER] %s: private data @ 0x%p\n", __PRETTY_FUNCTION__, priv));
+        D(bug("[animation.datatype/BUFFER] %s: dt obj @ 0x%p, instance data @ 0x%p\n", __PRETTY_FUNCTION__, priv->pp_Object, priv->pp_Data));
 
         ObtainSemaphore(&priv->pp_FlagsLock);
         priv->pp_BufferFlags |= PRIVPROCF_RUNNING;
@@ -48,14 +48,18 @@ AROS_UFH3(void, bufferProc,
 
         if ((priv->pp_Data->ad_LoadFrames = AllocSignal(-1)) != 0)
         {
-            D(bug("[animation.datatype]: %s: allocated load signal (%x)\n", __PRETTY_FUNCTION__, priv->pp_Data->ad_LoadFrames));
+            D(bug("[animation.datatype/BUFFER]: %s: allocated load signal (%x)\n", __PRETTY_FUNCTION__, priv->pp_Data->ad_LoadFrames));
             while (TRUE)
             {
-                if ((priv->pp_BufferFlags & PRIVPROCF_ENABLED) &&
+                ObtainSemaphore(&priv->pp_FlagsLock);
+                priv->pp_BufferFlags &= ~PRIVPROCF_ACTIVE;
+                ReleaseSemaphore(&priv->pp_FlagsLock);
+
+                if (ProcEnabled(priv, &priv->pp_BufferFlags, PRIVPROCF_ENABLED) &&
                     (priv->pp_BufferLevel < priv->pp_BufferFrames) &&
                     (priv->pp_BufferLevel < priv->pp_Data->ad_Frames))
                 {
-                    D(bug("[animation.datatype]: %s: %d:%d\n", __PRETTY_FUNCTION__, priv->pp_BufferLevel, priv->pp_BufferFrames));
+                    D(bug("[animation.datatype/BUFFER]: %s: %d:%d\n", __PRETTY_FUNCTION__, priv->pp_BufferLevel, priv->pp_BufferFrames));
                     signal = priv->pp_Data->ad_LoadFrames;
                 }
                 else
@@ -64,19 +68,23 @@ AROS_UFH3(void, bufferProc,
                     signal = Wait(signal);
                 };
 
-                D(bug("[animation.datatype]: %s: signalled (%08x)\n", __PRETTY_FUNCTION__, signal));
+                D(bug("[animation.datatype/BUFFER]: %s: signalled (%08x)\n", __PRETTY_FUNCTION__, signal));
 
                 if (signal & SIGBREAKF_CTRL_C)
                     break;
 
-                if ((priv->pp_BufferFlags & PRIVPROCF_ENABLED) && (signal & priv->pp_Data->ad_LoadFrames))
+                if (ProcEnabled(priv, &priv->pp_BufferFlags, PRIVPROCF_ENABLED) && (signal & priv->pp_Data->ad_LoadFrames))
                 {
-                    D(bug("[animation.datatype]: %s: Loading Frames...\n", __PRETTY_FUNCTION__));
+                    D(bug("[animation.datatype/BUFFER]: %s: Loading Frames...\n", __PRETTY_FUNCTION__));
+
+                    ObtainSemaphore(&priv->pp_FlagsLock);
+                    priv->pp_BufferFlags |= PRIVPROCF_ACTIVE;
+                    ReleaseSemaphore(&priv->pp_FlagsLock);
 
                     if ((curFrame) ||
                         ((curFrame = AllocMem(sizeof(struct AnimFrame), MEMF_ANY)) != NULL))
                     {
-                        D(bug("[animation.datatype]: %s: using AnimFrame @ 0x%p\n", __PRETTY_FUNCTION__, curFrame));
+                        D(bug("[animation.datatype/BUFFER]: %s: using AnimFrame @ 0x%p\n", __PRETTY_FUNCTION__, curFrame));
 
                         curFrame->af_Frame.MethodID = ADTM_LOADFRAME;
 
@@ -95,12 +103,12 @@ AROS_UFH3(void, bufferProc,
                         curFrame->af_Frame.alf_Sample = NULL;
                         curFrame->af_Frame.alf_UserData = NULL;
 
-                        D(bug("[animation.datatype]: %s: Loading Frame #%d\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_Frame));
+                        D(bug("[animation.datatype/BUFFER]: %s: Loading Frame #%d\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_Frame));
 
                         if (DoMethodA(priv->pp_Object, (Msg)&curFrame->af_Frame))
                         {
                             priv->pp_BufferLevel++;
-                            D(bug("[animation.datatype]: %s: Loaded! bitmap @ %p\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_BitMap));
+                            D(bug("[animation.datatype/BUFFER]: %s: Loaded! bitmap @ %p\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_BitMap));
                             ObtainSemaphore(&priv->pp_Data->ad_AnimFramesLock);
                             AddTail(&priv->pp_Data->ad_AnimFrames, &curFrame->af_Node);
                             ReleaseSemaphore(&priv->pp_Data->ad_AnimFramesLock);
@@ -116,7 +124,7 @@ AROS_UFH3(void, bufferProc,
         ReleaseSemaphore(&priv->pp_FlagsLock);
         priv->pp_Data->ad_BufferProc = NULL;
     }
-    D(bug("[animation.datatype]: %s: exiting ...\n", __PRETTY_FUNCTION__));
+    D(bug("[animation.datatype/BUFFER]: %s: exiting ...\n", __PRETTY_FUNCTION__));
 
     return;
 

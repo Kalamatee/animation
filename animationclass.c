@@ -284,6 +284,27 @@ IPTR DT_RenderBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffe
     return (IPTR)1;
 }
 
+UBYTE HAMFlag(UBYTE depth, UBYTE pen)
+{
+    if (depth == 8)
+        return  ((pen & 0xC0) >> 6);
+    return ((pen & 0x30) >> 4);
+}
+
+UBYTE HAMComponent(UBYTE depth, UBYTE pen)
+{
+    if (depth == 8)
+        return  (pen & 0x3F);
+    return (pen & 0xF);
+}
+
+UBYTE HAMColor(UBYTE depth, UBYTE pen, UBYTE val)
+{
+    if (depth < 8)
+        return  (HAMComponent(depth, pen) << 4);
+    return (val & 0x3) | (HAMComponent(depth, pen) << 2);
+}
+
 IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer *msg)
 {
     struct Animation_Data *animd = INST_DATA (cl, g);
@@ -293,7 +314,7 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer
         { OBP_Precision,        animd->ad_PenPrecison   },
         { TAG_DONE,             0                       }
     };
-    UBYTE *tmpline;
+    UBYTE *tmpline, *outline;
     ULONG curpen;
     int i, x;
 
@@ -328,20 +349,111 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer
         // remap the source ..
         if ((tmpline = AllocVec(animd->ad_BitMapHeader.bmh_Width, MEMF_ANY)) != NULL)
         {
+            UBYTE srcdepth, buffdepth;
+            srcdepth = (UBYTE)GetBitMapAttr(msg->Source, BMA_DEPTH);
+            buffdepth = (UBYTE)GetBitMapAttr(animd->ad_FrameBuffer, BMA_DEPTH);
+
+            if ((animd->ad_ModeID & HAM_KEY) && (srcdepth <= 8))
+            {
+                D(bug("[animation.datatype] %s: remapping HAM%d\n", __PRETTY_FUNCTION__, srcdepth));
+                outline = AllocVec(animd->ad_BitMapHeader.bmh_Width << 2, MEMF_ANY);
+            }
+            else
+                outline = tmpline;
+
             InitRastPort(&remapRP);
             InitRastPort(&targetRP);
+
             remapRP.BitMap = msg->Source;
             targetRP.BitMap = animd->ad_FrameBuffer;
+
             for(i = 0; i < animd->ad_BitMapHeader.bmh_Height; i++)
             {
-                ReadPixelLine8(&remapRP,0,i,animd->ad_BitMapHeader.bmh_Width,tmpline,NULL);
-                for(x = 0; x < animd->ad_BitMapHeader.bmh_Width; x++)
+                if ((animd->ad_ModeID & HAM_KEY) && (srcdepth <= 8))
                 {
-                    curpen = tmpline[x];
-                    tmpline[x] = animd->ad_ColorTable2[curpen];
+                    UBYTE hamr = 0, hamg = 0, hamb = 0;
+
+                    for(x = 0; x < animd->ad_BitMapHeader.bmh_Width; x++)
+                    {
+                        BOOL compose = TRUE;
+                        ULONG mask = 1 << (7 - (x & 7));
+                        UBYTE p;
+
+                        tmpline[x] = 0;
+                        for (p = 0; p < srcdepth; p++)
+                        {
+                            UBYTE *planedata = (UBYTE *)msg->Source->Planes[p];
+                            ULONG offset = (i * animd->ad_BitMapHeader.bmh_Width) + x;
+
+                            if ((planedata) && (planedata[offset / 8 ] & mask))
+                                tmpline[x] |=  (1 << p);
+                        }
+
+                        curpen = tmpline[x];
+                        if (HAMFlag(srcdepth, curpen) == 0)
+                        {
+                            curpen = HAMComponent(srcdepth, curpen);
+                            if (buffdepth <= 8)
+                            {
+                                compose = FALSE;
+                                outline[x] = animd->ad_ColorTable2[curpen];
+                            }
+                            hamr = (animd->ad_CRegs[curpen * 3] & 0xFF);
+                            hamg = (animd->ad_CRegs[curpen * 3 + 1] & 0xFF);
+                            hamb = (animd->ad_CRegs[curpen * 3 + 2] & 0xFF);
+                        }
+                        else if (HAMFlag(srcdepth, curpen) == 1)
+                        {
+                            //modify blue..
+                            hamb = HAMColor(srcdepth, curpen, hamb);
+                        }
+                        else if (HAMFlag(srcdepth, curpen) == 2)
+                        {
+                            // modify red
+                            hamr = HAMColor(srcdepth, curpen, hamr);
+                        }
+                        else if (HAMFlag(srcdepth, curpen) == 3)
+                        {
+                            //modify green
+                            hamg = HAMColor(srcdepth, curpen, hamg);
+                        }
+
+                        if (compose)
+                        {
+                            if (buffdepth <= 8)
+                            {
+                                // TODO: Map pixel color
+                                outline[x] = 0;
+                            }
+                            else
+                            {
+                                outline[x * 4] = 0;
+                                outline[x * 4 + 1] = hamr;
+                                outline[x * 4 + 2] = hamg;
+                                outline[x * 4 + 3] = hamb;
+                            }
+                        }
+                    }
+                    if (buffdepth <= 8)
+                        WritePixelLine8(&targetRP,0,i,animd->ad_BitMapHeader.bmh_Width,outline,NULL);
+                    else
+                        WritePixelArray(outline, 0, 0, animd->ad_BitMapHeader.bmh_Width, &targetRP, 0, i, animd->ad_BitMapHeader.bmh_Width, 1, RECTFMT_ARGB);
                 }
-                WritePixelLine8(&targetRP,0,i,animd->ad_BitMapHeader.bmh_Width,tmpline,NULL);
+                else
+                {
+                    ReadPixelLine8(&remapRP,0,i,animd->ad_BitMapHeader.bmh_Width,tmpline,NULL);
+
+                    for(x = 0; x < animd->ad_BitMapHeader.bmh_Width; x++)
+                    {
+                        curpen = tmpline[x];
+                        outline[x] = animd->ad_ColorTable2[curpen];
+                    }
+
+                    WritePixelLine8(&targetRP,0,i,animd->ad_BitMapHeader.bmh_Width,outline,NULL);
+                }
             }
+            if (outline != tmpline)
+                FreeVec(outline);
             FreeVec(tmpline);
         }
     }
@@ -573,6 +685,10 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
         case ADTA_ModeID:
             D(bug("[animation.datatype] %s: ADTA_ModeID (%08x)\n", __PRETTY_FUNCTION__, tag->ti_Data));
             animd->ad_ModeID = (IPTR) tag->ti_Data;
+            D(
+                if (animd->ad_ModeID & HAM_KEY)
+                    D(bug("[animation.datatype] %s: HAM mode!\n", __PRETTY_FUNCTION__));
+            )
             break;
 
         case ADTA_Width:
@@ -796,6 +912,20 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
     return (IPTR)g;
 }
 
+BOOL ProcEnabled(struct ProcessPrivate *priv, volatile ULONG *flags, ULONG flag)
+{
+    ULONG flagval;
+
+    ObtainSemaphoreShared(&priv->pp_FlagsLock);
+    flagval = *flags;
+    ReleaseSemaphore(&priv->pp_FlagsLock);
+
+    if (flagval & flag)
+        return TRUE;
+
+    return FALSE;
+}
+
 IPTR DT_RemoveDTObject(struct IClass *cl, Object *o, Msg msg)
 {
     struct Animation_Data *animd = INST_DATA (cl, o);
@@ -812,23 +942,18 @@ IPTR DT_RemoveDTObject(struct IClass *cl, Object *o, Msg msg)
         animd->ad_PlayerData->pp_PlayerFlags &= ~PRIVPROCF_ENABLED;
         ReleaseSemaphore(&animd->ad_PlayerData->pp_FlagsLock);
         // wait for them to finish ...
+        while (ProcEnabled(animd->ad_PlayerData, &animd->ad_PlayerData->pp_BufferFlags, PRIVPROCF_ACTIVE))
+        {
+            Delay (1);
+        }
+        while (ProcEnabled(animd->ad_PlayerData, &animd->ad_PlayerData->pp_PlayerFlags, PRIVPROCF_ACTIVE))
+        {
+            Delay (1);
+        }
+        Delay (2);
     }
 
     return DoSuperMethodA(cl, o, msg);
-}
-
-BOOL ProcIsAlive(struct ProcessPrivate *priv, volatile ULONG *flags)
-{
-    ULONG flag;
-
-    ObtainSemaphoreShared(&priv->pp_FlagsLock);
-    flag = *flags;
-    ReleaseSemaphore(&priv->pp_FlagsLock);
-
-    if (flag & PRIVPROCF_RUNNING)
-        return TRUE;
-
-    return FALSE;
 }
 
 IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
@@ -845,7 +970,7 @@ IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
     {
         Signal((struct Task *)animd->ad_BufferProc, SIGBREAKF_CTRL_C);
 
-        while (ProcIsAlive(animd->ad_PlayerData, &animd->ad_PlayerData->pp_BufferFlags))
+        while (ProcEnabled(animd->ad_PlayerData, &animd->ad_PlayerData->pp_BufferFlags, PRIVPROCF_RUNNING))
         {
             Delay (1);
         }
@@ -855,7 +980,7 @@ IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
     {
         Signal((struct Task *)animd->ad_PlayerProc, SIGBREAKF_CTRL_C);
 
-        while (ProcIsAlive(animd->ad_PlayerData, &animd->ad_PlayerData->pp_PlayerFlags))
+        while (ProcEnabled(animd->ad_PlayerData, &animd->ad_PlayerData->pp_PlayerFlags, PRIVPROCF_RUNNING))
         {
             Delay (1);
         }
@@ -935,6 +1060,19 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
     }
 
     GetAttr(DTA_Domain, (Object *)g, (IPTR *)&gadBox);
+
+    animd->ad_RenderLeft = gadBox->Left;
+    animd->ad_RenderTop = gadBox->Top;
+    if (gadBox->Width > animd->ad_BitMapHeader.bmh_Width)
+        animd->ad_RenderWidth = animd->ad_BitMapHeader.bmh_Width;
+    else
+        animd->ad_RenderWidth = gadBox->Width;
+        
+    if (gadBox->Height > animd->ad_BitMapHeader.bmh_Height)
+        animd->ad_RenderHeight = animd->ad_BitMapHeader.bmh_Height;
+    else
+        animd->ad_RenderHeight = gadBox->Height;
+
     totalheight = animd->ad_BitMapHeader.bmh_Height;
 
     // propogate our known dimensions to the tapedeck ..
@@ -942,7 +1080,7 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
     {
         struct TagItem tdAttrs[] =
         {
-            { GA_Left,          gadBox->Left                                    },
+            { GA_Left,          animd->ad_RenderLeft                            },
             { GA_Top,           0                                               },
             { GA_Width,         animd->ad_BitMapHeader.bmh_Width                },
             { GA_Height,        0                                               },
@@ -956,12 +1094,15 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
         animd->ad_Flags |= ANIMDF_SHOWPANEL;
 
         // try to adjust to accomodate it ..
-        if (gadBox->Height > animd->ad_BitMapHeader.bmh_Height + tdAttrs[3].ti_Data)
-            tdAttrs[1].ti_Data = gadBox->Top + animd->ad_BitMapHeader.bmh_Height;
+        if (gadBox->Height >= totalheight)
+            tdAttrs[1].ti_Data = animd->ad_RenderTop + animd->ad_BitMapHeader.bmh_Height;
         else
         {
             if (gadBox->Height > tdAttrs[3].ti_Data)
-                tdAttrs[1].ti_Data = gadBox->Top + gadBox->Height - tdAttrs[3].ti_Data;
+            {
+                animd->ad_RenderHeight = gadBox->Height - tdAttrs[3].ti_Data;
+                tdAttrs[1].ti_Data = animd->ad_RenderTop + animd->ad_RenderHeight;
+            }
             else
             {
                 // TODO: Adjust the tapedeck height or hide it?
@@ -970,10 +1111,10 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
             }
         }
 
-        if (gadBox->Width > animd->ad_BitMapHeader.bmh_Width)
+        if (animd->ad_RenderWidth > animd->ad_BitMapHeader.bmh_Width)
             tdAttrs[2].ti_Data = animd->ad_BitMapHeader.bmh_Width;
         else
-            tdAttrs[2].ti_Data = gadBox->Width;
+            tdAttrs[2].ti_Data = animd->ad_RenderWidth;
 
         SetAttrsA((Object *)animd->ad_Tapedeck, tdAttrs);
 
@@ -991,7 +1132,7 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
             { GA_ID,            g->GadgetID                             },
             { DTA_Busy,         FALSE                                   },
             { DTA_TotalHoriz,   animd->ad_BitMapHeader.bmh_Width        },
-            { DTA_VisibleHoriz, gadBox->Width                           },
+            { DTA_VisibleHoriz, animd->ad_RenderWidth                           },
             { DTA_TotalVert,    totalheight                             },
             { DTA_VisibleVert,  gadBox->Height                          },
             { TAG_DONE,         0                                       }
@@ -1011,8 +1152,6 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
 IPTR DT_Render(struct IClass *cl, struct Gadget *g, struct gpRender *msg)
 {
     struct Animation_Data *animd = INST_DATA (cl, (Object *)g);
-    struct IBox *gadBox;
-    UWORD fillwidth, fillheight;
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
@@ -1020,10 +1159,8 @@ IPTR DT_Render(struct IClass *cl, struct Gadget *g, struct gpRender *msg)
     {
         IPTR bmdepth;
 
-#if (0)
         bmdepth = GetBitMapAttr(msg->gpr_RPort->BitMap, BMA_DEPTH);
         if (bmdepth < animd->ad_BitMapHeader.bmh_Depth)
-#endif
             bmdepth = animd->ad_BitMapHeader.bmh_Depth;
 
         DoMethod((Object *)g, PRIVATE_ALLOCBUFFER, msg->gpr_RPort->BitMap, bmdepth);
@@ -1036,27 +1173,20 @@ IPTR DT_Render(struct IClass *cl, struct Gadget *g, struct gpRender *msg)
 
     LockLayer(0, msg->gpr_GInfo->gi_Window->WLayer);
 
-    GetAttr(DTA_Domain, (Object *)g, (IPTR *)&gadBox);
-
-    if (gadBox->Width > animd->ad_BitMapHeader.bmh_Width)
-        fillwidth = animd->ad_BitMapHeader.bmh_Width;
-    else
-        fillwidth = gadBox->Width;
-        
-    if (gadBox->Height > animd->ad_BitMapHeader.bmh_Height)
-        fillheight = animd->ad_BitMapHeader.bmh_Height;
-    else
-        fillheight = gadBox->Height;
-
     if (animd->ad_FrameBuffer)
     {
-        BltBitMapRastPort(animd->ad_FrameBuffer, animd->ad_HorizTop, animd->ad_VertTop, msg->gpr_RPort, gadBox->Left, gadBox->Top, fillwidth, fillheight, 0xC0);
+        BltBitMapRastPort(animd->ad_FrameBuffer,
+            animd->ad_HorizTop, animd->ad_VertTop,
+            msg->gpr_RPort,
+            animd->ad_RenderLeft, animd->ad_RenderTop, animd->ad_RenderWidth, animd->ad_RenderHeight, 0xC0);
     }
     else
     {
         // for now fill the animations area
         SetRPAttrs(msg->gpr_RPort, RPTAG_FgColor, 0xEE8888, TAG_DONE );
-        RectFill(msg->gpr_RPort, gadBox->Left, gadBox->Top , gadBox->Left + fillwidth, gadBox->Top + fillheight);
+        RectFill(msg->gpr_RPort,
+            animd->ad_RenderLeft, animd->ad_RenderTop,
+            animd->ad_RenderLeft + animd->ad_RenderWidth - 1, animd->ad_RenderTop + animd->ad_RenderHeight - 1);
     }
 
     if (animd->ad_Flags & ANIMDF_SHOWPANEL)

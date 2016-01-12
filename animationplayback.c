@@ -10,9 +10,11 @@
 #include <proto/exec.h>
 #include <proto/dos.h>
 #include <proto/intuition.h>
+#include <proto/graphics.h>
 #include <proto/utility.h>
 #include <proto/realtime.h>
 #include <proto/layers.h>
+#include <proto/datatypes.h>
 
 #include <intuition/gadgetclass.h>
 #include <libraries/realtime.h>
@@ -86,17 +88,18 @@ AROS_UFH3(void, playerProc,
     struct TagItem attrtags[] =
     {
         { TAG_IGNORE,   0},
+        { TAG_IGNORE,   0},
         { TAG_DONE,     0}
     };
     UWORD frame = 0, framelast = 0;
     ULONG signal;
 
-    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
+    D(bug("[animation.datatype/PLAY]: %s()\n", __PRETTY_FUNCTION__));
 
     if (priv)
     {
-        D(bug("[animation.datatype] %s: private data @ 0x%p\n", __PRETTY_FUNCTION__, priv));
-        D(bug("[animation.datatype] %s: dt obj @ 0x%p, instance data @ 0x%p\n", __PRETTY_FUNCTION__, priv->pp_Object, priv->pp_Data));
+        D(bug("[animation.datatype/PLAY] %s: private data @ 0x%p\n", __PRETTY_FUNCTION__, priv));
+        D(bug("[animation.datatype/PLAY] %s: dt obj @ 0x%p, instance data @ 0x%p\n", __PRETTY_FUNCTION__, priv->pp_Object, priv->pp_Data));
 
         ObtainSemaphore(&priv->pp_FlagsLock);
         priv->pp_PlayerFlags |= PRIVPROCF_RUNNING;
@@ -104,21 +107,29 @@ AROS_UFH3(void, playerProc,
 
         if ((priv->pp_Data->ad_PlayerTick = AllocSignal(-1)) != 0)
         {
-            D(bug("[animation.datatype]: %s: allocated tick signal (%x)\n", __PRETTY_FUNCTION__, priv->pp_Data->ad_PlayerTick));
+            D(bug("[animation.datatype/PLAY]: %s: allocated tick signal (%x)\n", __PRETTY_FUNCTION__, priv->pp_Data->ad_PlayerTick));
             while (TRUE)
             {
+                ObtainSemaphore(&priv->pp_FlagsLock);
+                priv->pp_PlayerFlags &= ~PRIVPROCF_ACTIVE;
+                ReleaseSemaphore(&priv->pp_FlagsLock);
+
                 signal = priv->pp_Data->ad_PlayerTick | SIGBREAKF_CTRL_C;
                 signal = Wait(signal);
 
-                D(bug("[animation.datatype]: %s: signalled (%08x)\n", __PRETTY_FUNCTION__, signal));
+                D(bug("[animation.datatype/PLAY]: %s: signalled (%08x)\n", __PRETTY_FUNCTION__, signal));
 
                 if (signal & SIGBREAKF_CTRL_C)
                     break;
 
-                if ((priv->pp_PlayerFlags & PRIVPROCF_ENABLED) && (signal & priv->pp_Data->ad_PlayerTick))
+                if ((ProcEnabled(priv, &priv->pp_PlayerFlags, PRIVPROCF_ENABLED)) && (signal & priv->pp_Data->ad_PlayerTick))
                 {
                     frame = priv->pp_Data->ad_FrameCurrent;
-                    D(bug("[animation.datatype]: %s: TICK (frame %d)\n", __PRETTY_FUNCTION__, frame));
+                    D(bug("[animation.datatype/PLAY]: %s: TICK (frame %d)\n", __PRETTY_FUNCTION__, frame));
+
+                    ObtainSemaphore(&priv->pp_FlagsLock);
+                    priv->pp_PlayerFlags |= PRIVPROCF_ACTIVE;
+                    ReleaseSemaphore(&priv->pp_FlagsLock);
 
                     if (frame != framelast)
                     {
@@ -146,8 +157,8 @@ AROS_UFH3(void, playerProc,
                         if ((curFrame) && (curFrame->af_Frame.alf_BitMap))
                         {
                             rendFrame->Source = curFrame->af_Frame.alf_BitMap;
-                            D(bug("[animation.datatype]: %s: Rendering Frame @ 0x%p\n", __PRETTY_FUNCTION__, curFrame));
-                            D(bug("[animation.datatype]: %s: #%d BitMap @ 0x%p\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_Frame, curFrame->af_Frame.alf_BitMap));
+                            D(bug("[animation.datatype/PLAY]: %s: Rendering Frame @ 0x%p\n", __PRETTY_FUNCTION__, curFrame));
+                            D(bug("[animation.datatype/PLAY]: %s: #%d BitMap @ 0x%p\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_Frame, curFrame->af_Frame.alf_BitMap));
                         }
                         else
                         {
@@ -176,15 +187,27 @@ AROS_UFH3(void, playerProc,
                                 // update the tapedeck gadget..
                                 attrtags[0].ti_Tag = TDECK_CurrentFrame;
                                 attrtags[0].ti_Data = frame;
+                                attrtags[0].ti_Tag = TAG_IGNORE;
 
                                 SetAttrsA((Object *)priv->pp_Data->ad_Tapedeck, attrtags);
                             }
+                            D(bug("[animation.datatype/PLAY]: %s: Asking DTObj to render..\n", __PRETTY_FUNCTION__));
                             // tell the top level gadget to redraw...
-                            gprMsg.MethodID   = GM_RENDER;
+#if (0)
+                            gprMsg.MethodID   = OM_NOTIFY;
                             gprMsg.gpr_RPort  = priv->pp_Data->ad_Window->RPort;
                             gprMsg.gpr_GInfo  = NULL;
                             gprMsg.gpr_Redraw = 0;
                             DoGadgetMethodA(priv->pp_Object, priv->pp_Data->ad_Window, NULL, (Msg)&gprMsg);
+#else
+                            LockLayer(0, priv->pp_Data->ad_Window->WLayer);
+                            BltBitMapRastPort(priv->pp_Data->ad_FrameBuffer,
+                                priv->pp_Data->ad_HorizTop, priv->pp_Data->ad_VertTop,
+                                priv->pp_Data->ad_Window->RPort,
+                                priv->pp_Data->ad_RenderLeft, priv->pp_Data->ad_RenderTop,
+                                priv->pp_Data->ad_RenderWidth, priv->pp_Data->ad_RenderHeight, 0xC0);
+                            UnlockLayer(priv->pp_Data->ad_Window->WLayer);
+#endif
                         }
                         prevFrame = curFrame;
                         framelast = frame;
@@ -199,7 +222,7 @@ AROS_UFH3(void, playerProc,
         priv->pp_Data->ad_PlayerProc = NULL;
     }
 
-    D(bug("[animation.datatype]: %s: exiting ...\n", __PRETTY_FUNCTION__));
+    D(bug("[animation.datatype/PLAY]: %s: exiting ...\n", __PRETTY_FUNCTION__));
 
     return;
 
