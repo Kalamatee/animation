@@ -103,6 +103,20 @@ struct DTMethod SupportedTriggerMethods[] =
     { NULL,                     NULL,                   0               },
 };
 
+BOOL ProcEnabled(struct ProcessPrivate *priv, volatile ULONG *flags, ULONG flag)
+{
+    ULONG flagval;
+
+    ObtainSemaphoreShared(&priv->pp_FlagsLock);
+    flagval = *flags;
+    ReleaseSemaphore(&priv->pp_FlagsLock);
+
+    if (flagval & flag)
+        return TRUE;
+
+    return FALSE;
+}
+
 /*** PRIVATE METHODS ***/
 IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
 {
@@ -139,29 +153,49 @@ IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
         InitSemaphore(&animd->ad_PlayerData->pp_FlagsLock);
         animd->ad_PlayerData->pp_PlayerFlags = 0;
         animd->ad_PlayerData->pp_BufferFlags = 0;
+        animd->ad_LoadFrames = -1;
+        animd->ad_PlayerTick = -1;
     }
 
     if ((animd->ad_PlayerData) && !(animd->ad_BufferProc))
     {
         animd->ad_BufferProc = CreateNewProcTags(
-                            NP_Entry,       (IPTR)bufferProc,
-                            NP_Name,        (IPTR)"Animation Buffering",
-                            NP_Synchronous, FALSE,
-                            NP_UserData,    (IPTR)animd->ad_PlayerData,
-                            NP_StackSize,   40000,
+                            NP_Entry,           (IPTR)bufferProc,
+                            NP_Name,            (IPTR)"Animation Buffering",
+                            NP_Priority,        (IPTR)((BYTE)-1),
+                            NP_Synchronous,     FALSE,
+                            NP_Input,           Input (),
+                            NP_CloseInput,      FALSE,
+                            NP_Output,          Output (),
+                            NP_CloseOutput,     FALSE,
+                            NP_UserData,        (IPTR)animd->ad_PlayerData,
+                            NP_StackSize,       400000,
                             TAG_DONE);
+        while (!ProcEnabled(animd->ad_PlayerData, &animd->ad_PlayerData->pp_BufferFlags, PRIVPROCF_RUNNING))
+        {
+            Delay (1);
+        }
     }
     D(bug("[animation.datatype] %s: Buffering Process @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_BufferProc));
 
     if ((animd->ad_PlayerData) && !(animd->ad_PlayerProc))
     {
         animd->ad_PlayerProc = CreateNewProcTags(
-                            NP_Entry,       (IPTR)playerProc,
-                            NP_Name,        (IPTR)"Animation Playback",
-                            NP_Synchronous, FALSE,
-                            NP_UserData,    (IPTR)animd->ad_PlayerData,
-                            NP_StackSize,   40000,
+                            NP_Entry,           (IPTR)playerProc,
+                            NP_Name,            (IPTR)"Animation Playback",
+                            NP_Priority,        0,
+                            NP_Synchronous,     FALSE,
+                            NP_Input,           Input (),
+                            NP_CloseInput,      FALSE,
+                            NP_Output,          Output (),
+                            NP_CloseOutput,     FALSE,
+                            NP_UserData,        (IPTR)animd->ad_PlayerData,
+                            NP_StackSize,       400000,
                             TAG_DONE);
+        while (!ProcEnabled(animd->ad_PlayerData, &animd->ad_PlayerData->pp_PlayerFlags, PRIVPROCF_RUNNING))
+        {
+            Delay (1);
+        }
     }
     D(bug("[animation.datatype] %s: Playback Process @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_PlayerProc));
 
@@ -186,6 +220,7 @@ IPTR DT_FreePens(struct IClass *cl, struct Gadget *g, Msg msg)
         }
 
         animd->ad_NumAlloc = 0;
+        animd->ad_Flags &= ~ANIMDF_REMAPPEDPENS;
     }
 
     return 1;
@@ -308,7 +343,7 @@ UBYTE HAMColor(UBYTE depth, UBYTE pen, UBYTE val)
 IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer *msg)
 {
     struct Animation_Data *animd = INST_DATA (cl, g);
-    struct RastPort remapRP, targetRP;
+    struct RastPort *remapRP, *targetRP;
     struct TagItem bestpenTags[] =
     {
         { OBP_Precision,        animd->ad_PenPrecison   },
@@ -330,7 +365,7 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer
             for (i = 0; i < animd->ad_NumColors; i++)
             {
                 curpen = animd->ad_NumAlloc++;
-                animd->ad_Allocated[curpen] = ObtainBestPenA(animd->ad_Window->WScreen->ViewPort.ColorMap,
+                animd->ad_Allocated[curpen] = ObtainBestPenA(animd->ad_ColorMap,
                     animd->ad_CRegs[i * 3], animd->ad_CRegs[i * 3 + 1], animd->ad_CRegs[i * 3 + 2],
                     bestpenTags);
 
@@ -361,11 +396,11 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer
             else
                 outline = tmpline;
 
-            InitRastPort(&remapRP);
-            InitRastPort(&targetRP);
+            remapRP = CreateRastPort();
+            targetRP = CreateRastPort();
 
-            remapRP.BitMap = msg->Source;
-            targetRP.BitMap = animd->ad_FrameBuffer;
+            remapRP->BitMap = msg->Source;
+            targetRP->BitMap = animd->ad_FrameBuffer;
 
             for(i = 0; i < animd->ad_BitMapHeader.bmh_Height; i++)
             {
@@ -435,13 +470,13 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer
                         }
                     }
                     if (buffdepth <= 8)
-                        WritePixelLine8(&targetRP,0,i,animd->ad_BitMapHeader.bmh_Width,outline,NULL);
+                        WritePixelLine8(targetRP,0,i,animd->ad_BitMapHeader.bmh_Width,outline,NULL);
                     else
-                        WritePixelArray(outline, 0, 0, animd->ad_BitMapHeader.bmh_Width, &targetRP, 0, i, animd->ad_BitMapHeader.bmh_Width, 1, RECTFMT_ARGB);
+                        WritePixelArray(outline, 0, 0, animd->ad_BitMapHeader.bmh_Width, targetRP, 0, i, animd->ad_BitMapHeader.bmh_Width, 1, RECTFMT_ARGB);
                 }
                 else
                 {
-                    ReadPixelLine8(&remapRP,0,i,animd->ad_BitMapHeader.bmh_Width,tmpline,NULL);
+                    ReadPixelLine8(remapRP,0,i,animd->ad_BitMapHeader.bmh_Width,tmpline,NULL);
 
                     for(x = 0; x < animd->ad_BitMapHeader.bmh_Width; x++)
                     {
@@ -449,9 +484,13 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer
                         outline[x] = animd->ad_ColorTable2[curpen];
                     }
 
-                    WritePixelLine8(&targetRP,0,i,animd->ad_BitMapHeader.bmh_Width,outline,NULL);
+                    WritePixelLine8(targetRP,0,i,animd->ad_BitMapHeader.bmh_Width,outline,NULL);
                 }
             }
+
+            FreeRastPort(remapRP);
+            FreeRastPort(targetRP);
+
             if (outline != tmpline)
                 FreeVec(outline);
             FreeVec(tmpline);
@@ -899,6 +938,7 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
 
         D(bug("[animation.datatype] %s: Prepare controls.. \n", __PRETTY_FUNCTION__));
         /* create a tapedeck gadget */
+
         if ((animd->ad_Tapedeck = NewObjectA(NULL, "tapedeck.gadget", tdtags)) != NULL)
         {
             D(bug("[animation.datatype] %s: Tapedeck @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_Tapedeck));
@@ -910,20 +950,6 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
     D(bug("[animation.datatype] %s: returning %p\n", __PRETTY_FUNCTION__, g));
 
     return (IPTR)g;
-}
-
-BOOL ProcEnabled(struct ProcessPrivate *priv, volatile ULONG *flags, ULONG flag)
-{
-    ULONG flagval;
-
-    ObtainSemaphoreShared(&priv->pp_FlagsLock);
-    flagval = *flags;
-    ReleaseSemaphore(&priv->pp_FlagsLock);
-
-    if (flagval & flag)
-        return TRUE;
-
-    return FALSE;
 }
 
 IPTR DT_RemoveDTObject(struct IClass *cl, Object *o, Msg msg)
@@ -1277,6 +1303,12 @@ IPTR DT_Start(struct IClass *cl, struct Gadget *g, struct adtStart *msg)
         SetAttrsA((Object *)animd->ad_Tapedeck, tdAttrs);
     }
     SetConductorState(animd->ad_Player, CONDSTATE_RUNNING, msg->asa_Frame * animd->ad_TicksPerFrame);
+    if (animd->ad_PlayerData)
+    {
+        // enable our subprocesses ..
+        animd->ad_PlayerData->pp_BufferFlags |= PRIVPROCF_ENABLED;
+        animd->ad_PlayerData->pp_PlayerFlags |= PRIVPROCF_ENABLED;
+    }
 
     return NULL;
 }

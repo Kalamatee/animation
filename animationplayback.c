@@ -63,11 +63,11 @@ AROS_UFH3(ULONG, playerHookFunc,
     }
 
 #if (0)
-    if (doLoad && (animd->ad_BufferProc) && (animd->ad_LoadFrames))
-        Signal((struct Task *)animd->ad_BufferProc, animd->ad_LoadFrames);
+    if (doLoad && (animd->ad_BufferProc) && (animd->ad_LoadFrames != -1))
+        Signal((struct Task *)animd->ad_BufferProc, (1 << animd->ad_LoadFrames));
 #endif
-    if (doTick && (animd->ad_PlayerProc) && (animd->ad_PlayerTick))
-        Signal((struct Task *)animd->ad_PlayerProc, animd->ad_PlayerTick);
+    if (doTick && (animd->ad_PlayerProc) && (animd->ad_PlayerTick != -1))
+        Signal((struct Task *)animd->ad_PlayerProc, (1 << animd->ad_PlayerTick));
 
     return 0;
 
@@ -84,6 +84,7 @@ AROS_UFH3(void, playerProc,
 
     struct ProcessPrivate *priv = FindTask(NULL)->tc_UserData;
     struct AnimFrame *curFrame = NULL, *prevFrame = NULL;
+    struct RastPort *winRP;
     struct gpRender gprMsg;
     struct TagItem attrtags[] =
     {
@@ -105,7 +106,7 @@ AROS_UFH3(void, playerProc,
         priv->pp_PlayerFlags |= PRIVPROCF_RUNNING;
         ReleaseSemaphore(&priv->pp_FlagsLock);
 
-        if ((priv->pp_Data->ad_PlayerTick = AllocSignal(-1)) != 0)
+        if ((priv->pp_Data->ad_PlayerTick = AllocSignal(-1)) != -1)
         {
             D(bug("[animation.datatype/PLAY]: %s: allocated tick signal (%x)\n", __PRETTY_FUNCTION__, priv->pp_Data->ad_PlayerTick));
             while (TRUE)
@@ -114,7 +115,7 @@ AROS_UFH3(void, playerProc,
                 priv->pp_PlayerFlags &= ~PRIVPROCF_ACTIVE;
                 ReleaseSemaphore(&priv->pp_FlagsLock);
 
-                signal = priv->pp_Data->ad_PlayerTick | SIGBREAKF_CTRL_C;
+                signal = (1 << priv->pp_Data->ad_PlayerTick) | SIGBREAKF_CTRL_C;
                 signal = Wait(signal);
 
                 D(bug("[animation.datatype/PLAY]: %s: signalled (%08x)\n", __PRETTY_FUNCTION__, signal));
@@ -122,7 +123,7 @@ AROS_UFH3(void, playerProc,
                 if (signal & SIGBREAKF_CTRL_C)
                     break;
 
-                if ((ProcEnabled(priv, &priv->pp_PlayerFlags, PRIVPROCF_ENABLED)) && (signal & priv->pp_Data->ad_PlayerTick))
+                if ((ProcEnabled(priv, &priv->pp_PlayerFlags, PRIVPROCF_ENABLED)) && (signal & (1 << priv->pp_Data->ad_PlayerTick)))
                 {
                     frame = priv->pp_Data->ad_FrameCurrent;
                     D(bug("[animation.datatype/PLAY]: %s: TICK (frame %d)\n", __PRETTY_FUNCTION__, frame));
@@ -131,8 +132,10 @@ AROS_UFH3(void, playerProc,
                     priv->pp_PlayerFlags |= PRIVPROCF_ACTIVE;
                     ReleaseSemaphore(&priv->pp_FlagsLock);
 
+#if (0)
                     if (frame != framelast)
                     {
+#endif
                         struct privRenderBuffer *rendFrame = (struct privRenderBuffer *)&gprMsg;
                         rendFrame->MethodID = PRIVATE_RENDERBUFFER;
 
@@ -141,10 +144,8 @@ AROS_UFH3(void, playerProc,
                         if ((!prevFrame) || (frame == 0))
                             curFrame = (struct AnimFrame *)GetHead(&priv->pp_Data->ad_AnimFrames);
                         else
-                            curFrame = prevFrame;
-
-                        if (frame > 0)
                         {
+                            curFrame = prevFrame;
                             while ((curFrame = (struct AnimFrame *)GetSucc(&curFrame->af_Node)) != NULL)
                             {
                                 if (curFrame->af_Frame.alf_Frame == frame)
@@ -161,16 +162,24 @@ AROS_UFH3(void, playerProc,
                             rendFrame->Source = curFrame->af_Frame.alf_BitMap;
                             D(bug("[animation.datatype/PLAY]: %s: Rendering Frame @ 0x%p\n", __PRETTY_FUNCTION__, curFrame));
                             D(bug("[animation.datatype/PLAY]: %s: #%d BitMap @ 0x%p\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_Frame, curFrame->af_Frame.alf_BitMap));
+                            if (curFrame->af_Frame.alf_CMap)
+                            {
+                                D(bug("[animation.datatype/PLAY]: %s: Frame CMap @ 0x%p\n", __PRETTY_FUNCTION__, curFrame, curFrame->af_Frame.alf_CMap));
+                                DoMethod(priv->pp_Object, PRIVATE_FREEPENS);
+                                GetRGB32(curFrame->af_Frame.alf_CMap, 0UL,
+                                    (curFrame->af_Frame.alf_CMap->Count < priv->pp_Data->ad_NumColors) ? curFrame->af_Frame.alf_CMap->Count : priv->pp_Data->ad_NumColors,
+                                    priv->pp_Data->ad_CRegs);
+                            }
                         }
                         else
                         {
-                            if ((priv->pp_Data->ad_BufferProc) && (priv->pp_Data->ad_LoadFrames))
-                                Signal((struct Task *)priv->pp_Data->ad_BufferProc, priv->pp_Data->ad_LoadFrames);
+                            if ((priv->pp_Data->ad_BufferProc) && (priv->pp_Data->ad_LoadFrames != -1))
+                                Signal((struct Task *)priv->pp_Data->ad_BufferProc, (1 << priv->pp_Data->ad_LoadFrames));
 
                             if ((prevFrame) && (prevFrame->af_Frame.alf_BitMap))
                             {
-                                frame = prevFrame->af_Frame.alf_Frame;
-                                rendFrame->Source = prevFrame->af_Frame.alf_BitMap;
+                                priv->pp_Data->ad_FrameCurrent = prevFrame->af_Frame.alf_Frame;
+                                continue;
                             }
                             else
                             {
@@ -204,18 +213,22 @@ AROS_UFH3(void, playerProc,
                             gprMsg.gpr_Redraw = 0;
                             DoGadgetMethodA(priv->pp_Object, priv->pp_Data->ad_Window, NULL, (Msg)&gprMsg);
 #else
-                            LockLayer(0, priv->pp_Data->ad_Window->WLayer);
-                            BltBitMapRastPort(priv->pp_Data->ad_FrameBuffer,
-                                priv->pp_Data->ad_HorizTop, priv->pp_Data->ad_VertTop,
-                                priv->pp_Data->ad_Window->RPort,
-                                priv->pp_Data->ad_RenderLeft, priv->pp_Data->ad_RenderTop,
-                                priv->pp_Data->ad_RenderWidth, priv->pp_Data->ad_RenderHeight, 0xC0);
-                            UnlockLayer(priv->pp_Data->ad_Window->WLayer);
+                            if ((winRP = CloneRastPort(priv->pp_Data->ad_Window->RPort)) != NULL)
+                            {
+                                BltBitMapRastPort(priv->pp_Data->ad_FrameBuffer,
+                                    priv->pp_Data->ad_HorizTop, priv->pp_Data->ad_VertTop,
+                                    winRP,
+                                    priv->pp_Data->ad_RenderLeft, priv->pp_Data->ad_RenderTop,
+                                    priv->pp_Data->ad_RenderWidth, priv->pp_Data->ad_RenderHeight, 0xC0);
+                                FreeRastPort(winRP);
+                            }
 #endif
                         }
                         prevFrame = curFrame;
                         framelast = frame;
+#if (0)
                     }
+#endif
                 }
             }
             FreeSignal(priv->pp_Data->ad_PlayerTick);

@@ -46,7 +46,7 @@ AROS_UFH3(void, bufferProc,
         priv->pp_BufferFlags |= PRIVPROCF_RUNNING;
         ReleaseSemaphore(&priv->pp_FlagsLock);
 
-        if ((priv->pp_Data->ad_LoadFrames = AllocSignal(-1)) != 0)
+        if ((priv->pp_Data->ad_LoadFrames = AllocSignal(-1)) != -1)
         {
             D(bug("[animation.datatype/BUFFER]: %s: allocated load signal (%x)\n", __PRETTY_FUNCTION__, priv->pp_Data->ad_LoadFrames));
             while (TRUE)
@@ -60,12 +60,12 @@ AROS_UFH3(void, bufferProc,
                     (priv->pp_BufferLevel < priv->pp_Data->ad_Frames))
                 {
                     D(bug("[animation.datatype/BUFFER]: %s: %d:%d\n", __PRETTY_FUNCTION__, priv->pp_BufferLevel, priv->pp_BufferFrames));
-                    signal = priv->pp_Data->ad_LoadFrames;
+                    signal = (1 << priv->pp_Data->ad_LoadFrames);
                 }
                 else
                 {
-                    signal = priv->pp_Data->ad_LoadFrames | SIGBREAKF_CTRL_C;
-                    signal = Wait(signal);
+                    D(bug("[animation.datatype/BUFFER]: %s: waiting ...\n", __PRETTY_FUNCTION__));
+                    signal = Wait((1 << priv->pp_Data->ad_LoadFrames) | SIGBREAKF_CTRL_C);
                 };
 
                 D(bug("[animation.datatype/BUFFER]: %s: signalled (%08x)\n", __PRETTY_FUNCTION__, signal));
@@ -73,7 +73,7 @@ AROS_UFH3(void, bufferProc,
                 if (signal & SIGBREAKF_CTRL_C)
                     break;
 
-                if (ProcEnabled(priv, &priv->pp_BufferFlags, PRIVPROCF_ENABLED) && (signal & priv->pp_Data->ad_LoadFrames))
+                if (ProcEnabled(priv, &priv->pp_BufferFlags, PRIVPROCF_ENABLED) && (signal & (1 <<priv->pp_Data->ad_LoadFrames)))
                 {
                     D(bug("[animation.datatype/BUFFER]: %s: Loading Frames...\n", __PRETTY_FUNCTION__));
 
@@ -109,6 +109,7 @@ AROS_UFH3(void, bufferProc,
                         {
                             priv->pp_BufferLevel++;
                             D(bug("[animation.datatype/BUFFER]: %s: Loaded! bitmap @ %p\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_BitMap));
+                            D(bug("[animation.datatype/BUFFER]: %s: frame #%d. stamp %d\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_Frame, curFrame->af_Frame.alf_TimeStamp));
                             ObtainSemaphore(&priv->pp_Data->ad_AnimFramesLock);
                             AddTail(&priv->pp_Data->ad_AnimFrames, &curFrame->af_Node);
                             ReleaseSemaphore(&priv->pp_Data->ad_AnimFramesLock);
