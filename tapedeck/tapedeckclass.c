@@ -13,11 +13,12 @@
 #include <exec/libraries.h>
 #include <proto/dos.h>
 #include <proto/intuition.h>
-#include <intuition/classes.h>
-#include <intuition/classusr.h>
-#include <intuition/imageclass.h>
 #include <intuition/intuition.h>
 #include <intuition/screens.h>
+#include <intuition/classes.h>
+#include <intuition/classusr.h>
+#include <intuition/gadgetclass.h>
+#include <intuition/imageclass.h>
 #include <proto/graphics.h>
 #include <graphics/rastport.h>
 #include <graphics/text.h>
@@ -37,6 +38,47 @@
 #define EG(o) ((struct Gadget *)(o))
 
 #include <clib/boopsistubs.h>
+
+static UBYTE templateRewind[] =
+{
+    0x03, 0x03,         // 0000001100000011
+    0x0F, 0x0f,         // 0000111100001111
+    0x3F, 0x3F,         // 0011111100011111
+    0xFF, 0xFF,         // 1111111111111111
+    0x3F, 0x3F,         // 0011111100111111
+    0x0F, 0x0F,         // 0000111100001111
+    0x03, 0x03,         // 0000001100000011
+};
+static UBYTE templatePlay[] =
+{
+    0xC0,               // 11000000
+    0xF0,               // 11110000
+    0xFC,               // 11111100
+    0xFF,               // 11111111
+    0xFC,               // 11111100
+    0xF0,               // 11110000
+    0xC0                // 11000000
+};
+static UBYTE templatePause[] =
+{
+    0xE7,               // 11100111
+    0xE7,               // 11100111
+    0xE7,               // 11100111
+    0xE7,               // 11100111
+    0xE7,               // 11100111
+    0xE7,               // 11100111
+    0xE7                // 11100111
+};
+static UBYTE templateFForward[] =
+{
+    0xC0, 0xC0,         // 1100000011000000
+    0xF0, 0xF0,         // 1111000011110000
+    0xFC, 0xFC,         // 1111110011111100
+    0xFF, 0xFF,         // 1111111111111111
+    0xFC, 0xFC,         // 1111110011111100
+    0xF0, 0xF0,         // 1111000011110000
+    0xC0, 0xC0,         // 1100000011000000
+};
 
 /***********************************************************************************/
 
@@ -157,6 +199,7 @@ Object *TapeDeck__OM_NEW(Class *cl, Class *rootcl, struct opSet *msg)
     struct TapeDeckData 	*data;
     struct TagItem pproptags[] =
     {
+        { GA_ID,                1               },
         { PGA_Visible,          1               },
         { PGA_Freedom,          FREEHORIZ       },
         { PGA_Borderless,       TRUE            },
@@ -166,9 +209,9 @@ Object *TapeDeck__OM_NEW(Class *cl, Class *rootcl, struct opSet *msg)
     };
     struct TagItem  	frametags[] =
     {
-        { IA_EdgesOnly,         FALSE		},
-	{ IA_FrameType,         FRAME_BUTTON	},
-        { TAG_DONE,             0UL 		}
+        { IA_EdgesOnly,         FALSE           },
+        { IA_FrameType,         FRAME_BUTTON    },
+        { TAG_DONE,             0               }
     };
 
     struct TextAttr 	*tattr;
@@ -191,8 +234,9 @@ Object *TapeDeck__OM_NEW(Class *cl, Class *rootcl, struct opSet *msg)
         TapeDeck__OM_SET(cl, o, msg);
 
         pproptags[3].ti_Data = data->tdd_FrameCount;
-        pproptags[4].ti_Data = data->tdd_FrameCurrent;    
+        pproptags[4].ti_Data = data->tdd_FrameCurrent;
         data->tdd_PosProp = NewObjectA(NULL, "propgclass", pproptags);
+
         D(bug("[tapedeck.gadget] %s: playback position prop @ 0x%p\n", __PRETTY_FUNCTION__, data->tdd_PosProp));
     }
 
@@ -271,95 +315,48 @@ IPTR TapeDeck__GM_RENDER(Class *cl, Object *o, struct gpRender *msg)
 
     SetAttrsA((Object *)data->tdd_PosProp, proptags);
     DoMethodA((Object *)data->tdd_PosProp, msg);
-    
-    rend_x = (EG(o)->Width - 59) >> 1;
-    rend_y = EG(o)->TopEdge + ((EG(o)->Height - 9) >> 1);
 
+    rend_x = (EG(o)->Width - 52) >> 1;
+    rend_y = EG(o)->TopEdge + 4 + ((EG(o)->Height - 11) >> 1);
+
+    if (data->tdd_Mode == BUT_REWIND)
+        pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHINEPEN];
+    else
+        pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHADOWPEN];
+    SetAPen(msg->gpr_RPort, pen);
+
+    BltTemplate ((void *) templateRewind,
+             0, 2,
+             msg->gpr_RPort, rend_x, rend_y,
+             16, 7);
+
+    SetAPen(msg->gpr_RPort, msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHADOWPEN]);
+
+    if (data->tdd_Mode == BUT_PLAY)
     {
-        /* Rewind */
-        if (data->tdd_Mode == BUT_REWIND)
-            pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHINEPEN];
-        else
-            pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHADOWPEN];
-        SetAPen(msg->gpr_RPort, pen);
-
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x, rend_y + 5 , EG(o)->LeftEdge + rend_x + 1, rend_y + 5);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 2, rend_y + 4 , EG(o)->LeftEdge + rend_x + 3, rend_y + 6);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 4, rend_y + 3 , EG(o)->LeftEdge + rend_x + 5, rend_y + 7);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 6, rend_y + 2 , EG(o)->LeftEdge + rend_x + 7, rend_y + 8);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 8, rend_y + 1 , EG(o)->LeftEdge + rend_x + 9, rend_y + 9);
-
-        rend_x += 9;
-
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x, rend_y + 5 , EG(o)->LeftEdge + rend_x + 1, rend_y + 5);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 2, rend_y + 4 , EG(o)->LeftEdge + rend_x + 3, rend_y + 6);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 4, rend_y + 3 , EG(o)->LeftEdge + rend_x + 5, rend_y + 7);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 6, rend_y + 2 , EG(o)->LeftEdge + rend_x + 7, rend_y + 8);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 8, rend_y + 1 , EG(o)->LeftEdge + rend_x + 9, rend_y + 9);
+        BltTemplate ((void *) templatePause,
+                 0, 1,
+                 msg->gpr_RPort, rend_x + 21, rend_y,
+                 8, 7);
+    }
+    else
+    {
+        BltTemplate ((void *) templatePlay,
+                 0, 1,
+                 msg->gpr_RPort, rend_x + 21, rend_y,
+                 8, 7);
     }
 
-    {
-        /* Play */
-        if (data->tdd_Mode == BUT_PLAY)
-            pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHINEPEN];
-        else
-            pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHADOWPEN];
-        SetAPen(msg->gpr_RPort, pen);
+    if (data->tdd_Mode == BUT_FORWARD)
+        pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHINEPEN];
+    else
+        pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHADOWPEN];
+    SetAPen(msg->gpr_RPort, pen);
 
-        rend_x += 16;
-
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x, rend_y , EG(o)->LeftEdge + rend_x + 1, rend_y + 10);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 2, rend_y + 1 , EG(o)->LeftEdge + rend_x + 3, rend_y + 9);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 4, rend_y + 2 , EG(o)->LeftEdge + rend_x + 5, rend_y + 8);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 6, rend_y + 3 , EG(o)->LeftEdge + rend_x + 7, rend_y + 7);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 8, rend_y + 4 , EG(o)->LeftEdge + rend_x + 9, rend_y + 6);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 10, rend_y + 5 , EG(o)->LeftEdge + rend_x + 11, rend_y + 5);
-    }
-
-    {
-        /* Fast Forward */
-        if (data->tdd_Mode == BUT_FORWARD)
-            pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHINEPEN];
-        else
-            pen = msg->gpr_GInfo->gi_DrInfo->dri_Pens[SHADOWPEN];
-        SetAPen(msg->gpr_RPort, pen);
-
-        rend_x += 14;
-
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 2, rend_y + 1 , EG(o)->LeftEdge + rend_x + 3, rend_y + 9);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 4, rend_y + 2 , EG(o)->LeftEdge + rend_x + 5, rend_y + 8);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 6, rend_y + 3 , EG(o)->LeftEdge + rend_x + 7, rend_y + 7);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 8, rend_y + 4 , EG(o)->LeftEdge + rend_x + 9, rend_y + 6);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 10, rend_y + 5 , EG(o)->LeftEdge + rend_x + 11, rend_y + 5);
-
-        rend_x += 9;
-
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 2, rend_y + 1 , EG(o)->LeftEdge + rend_x + 3, rend_y + 9);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 4, rend_y + 2 , EG(o)->LeftEdge + rend_x + 5, rend_y + 8);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 6, rend_y + 3 , EG(o)->LeftEdge + rend_x + 7, rend_y + 7);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 8, rend_y + 4 , EG(o)->LeftEdge + rend_x + 9, rend_y + 6);
-        RectFill(msg->gpr_RPort, EG(o)->LeftEdge + rend_x + 10, rend_y + 5 , EG(o)->LeftEdge + rend_x + 11, rend_y + 5);
-    }
-
-#if (0)
-    {
-        /* volume control */
-
-        rend_x = EG(o)->LeftEdge + EG(o)->Width - 17;
-
-        RectFill(msg->gpr_RPort, rend_x + 1, rend_y + 4, rend_x + 4, rend_y + 6);
-        RectFill(msg->gpr_RPort, rend_x + 5, rend_y + 3, rend_x + 5, rend_y + 7);
-        RectFill(msg->gpr_RPort, rend_x + 6, rend_y + 1, rend_x + 6, rend_y + 9);
-        RectFill(msg->gpr_RPort, rend_x + 13, rend_y,     rend_x + 13, rend_y + 1);
-        RectFill(msg->gpr_RPort, rend_x + 14, rend_y + 2, rend_x + 14, rend_y + 8);
-        RectFill(msg->gpr_RPort, rend_x + 13, rend_y + 9, rend_x + 13, rend_y + 10);
-        RectFill(msg->gpr_RPort, rend_x + 11, rend_y + 2, rend_x + 11, rend_y + 3);
-        RectFill(msg->gpr_RPort, rend_x + 12, rend_y + 4, rend_x + 12, rend_y + 6);
-        RectFill(msg->gpr_RPort, rend_x + 11, rend_y + 7, rend_x + 11, rend_y + 8);
-        RectFill(msg->gpr_RPort, rend_x + 9,  rend_y + 4, rend_x + 9,  rend_y + 6);
-        RectFill(msg->gpr_RPort, rend_x + 10, rend_y + 5, rend_x + 10, rend_y + 5);
-    }
-#endif
+    BltTemplate ((void *) templateFForward,
+             0, 2,
+             msg->gpr_RPort, rend_x + 34, rend_y,
+             16, 7);
 
     return 1;
 }
