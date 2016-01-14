@@ -84,7 +84,6 @@ AROS_UFH3(void, playerProc,
 
     struct ProcessPrivate *priv = FindTask(NULL)->tc_UserData;
     struct AnimFrame *curFrame = NULL, *prevFrame = NULL;
-    struct RastPort *winRP;
     struct gpRender gprMsg;
     struct TagItem attrtags[] =
     {
@@ -92,7 +91,7 @@ AROS_UFH3(void, playerProc,
         { TAG_IGNORE,   0},
         { TAG_DONE,     0}
     };
-    UWORD frame = 0, framelast = 0;
+    UWORD frame = 0;
     ULONG signal;
 
     D(bug("[animation.datatype/PLAY]: %s()\n", __PRETTY_FUNCTION__));
@@ -125,6 +124,9 @@ AROS_UFH3(void, playerProc,
 
                 if ((ProcEnabled(priv, &priv->pp_PlayerFlags, PRIVPROCF_ENABLED)) && (signal & (1 << priv->pp_Data->ad_PlayerTick)))
                 {
+                    struct privRenderBuffer *rendFrame = (struct privRenderBuffer *)&gprMsg;
+                    rendFrame->MethodID = PRIVATE_RENDERBUFFER;
+
                     frame = priv->pp_Data->ad_FrameCurrent;
                     D(bug("[animation.datatype/PLAY]: %s: TICK (frame %d)\n", __PRETTY_FUNCTION__, frame));
 
@@ -132,103 +134,80 @@ AROS_UFH3(void, playerProc,
                     priv->pp_PlayerFlags |= PRIVPROCF_ACTIVE;
                     ReleaseSemaphore(&priv->pp_FlagsLock);
 
-#if (0)
-                    if (frame != framelast)
+                    ObtainSemaphoreShared(&priv->pp_Data->ad_AnimFramesLock);
+
+                    if ((!prevFrame) || (frame == 0))
+                        curFrame = (struct AnimFrame *)GetHead(&priv->pp_Data->ad_AnimFrames);
+                    else
                     {
-#endif
-                        struct privRenderBuffer *rendFrame = (struct privRenderBuffer *)&gprMsg;
-                        rendFrame->MethodID = PRIVATE_RENDERBUFFER;
-
-                        ObtainSemaphoreShared(&priv->pp_Data->ad_AnimFramesLock);
-
-                        if ((!prevFrame) || (frame == 0))
-                            curFrame = (struct AnimFrame *)GetHead(&priv->pp_Data->ad_AnimFrames);
-                        else
+                        curFrame = prevFrame;
+                        while ((curFrame = (struct AnimFrame *)GetSucc(&curFrame->af_Node)) != NULL)
                         {
+                            if (curFrame->af_Frame.alf_Frame == frame)
+                                break;
+                        }
+                        if (!(curFrame))
                             curFrame = prevFrame;
-                            while ((curFrame = (struct AnimFrame *)GetSucc(&curFrame->af_Node)) != NULL)
-                            {
-                                if (curFrame->af_Frame.alf_Frame == frame)
-                                    break;
-                            }
-                            if (!(curFrame))
-                                curFrame = prevFrame;
-                        }
+                    }
 
-                        ReleaseSemaphore(&priv->pp_Data->ad_AnimFramesLock);
+                    ReleaseSemaphore(&priv->pp_Data->ad_AnimFramesLock);
 
-                        if ((curFrame) && (curFrame->af_Frame.alf_BitMap))
+                    if ((curFrame) && (curFrame->af_Frame.alf_BitMap))
+                    {
+                        rendFrame->Source = curFrame->af_Frame.alf_BitMap;
+                        D(bug("[animation.datatype/PLAY]: %s: Rendering Frame @ 0x%p\n", __PRETTY_FUNCTION__, curFrame));
+                        D(bug("[animation.datatype/PLAY]: %s: #%d BitMap @ 0x%p\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_Frame, curFrame->af_Frame.alf_BitMap));
+                        if (curFrame->af_Frame.alf_CMap)
                         {
-                            rendFrame->Source = curFrame->af_Frame.alf_BitMap;
-                            D(bug("[animation.datatype/PLAY]: %s: Rendering Frame @ 0x%p\n", __PRETTY_FUNCTION__, curFrame));
-                            D(bug("[animation.datatype/PLAY]: %s: #%d BitMap @ 0x%p\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_Frame, curFrame->af_Frame.alf_BitMap));
-                            if (curFrame->af_Frame.alf_CMap)
-                            {
-                                D(bug("[animation.datatype/PLAY]: %s: Frame CMap @ 0x%p\n", __PRETTY_FUNCTION__, curFrame, curFrame->af_Frame.alf_CMap));
-                                DoMethod(priv->pp_Object, PRIVATE_FREEPENS);
-                                GetRGB32(curFrame->af_Frame.alf_CMap, 0UL,
-                                    (curFrame->af_Frame.alf_CMap->Count < priv->pp_Data->ad_NumColors) ? curFrame->af_Frame.alf_CMap->Count : priv->pp_Data->ad_NumColors,
-                                    priv->pp_Data->ad_CRegs);
-                            }
+                            D(bug("[animation.datatype/PLAY]: %s: Frame CMap @ 0x%p\n", __PRETTY_FUNCTION__, curFrame, curFrame->af_Frame.alf_CMap));
+                            DoMethod(priv->pp_Object, PRIVATE_FREEPENS);
+                            GetRGB32(curFrame->af_Frame.alf_CMap, 0UL,
+                                (curFrame->af_Frame.alf_CMap->Count < priv->pp_Data->ad_NumColors) ? curFrame->af_Frame.alf_CMap->Count : priv->pp_Data->ad_NumColors,
+                                priv->pp_Data->ad_CRegs);
+                        }
+                    }
+                    else
+                    {
+                        if ((priv->pp_Data->ad_BufferProc) && (priv->pp_Data->ad_LoadFrames != -1))
+                            Signal((struct Task *)priv->pp_Data->ad_BufferProc, (1 << priv->pp_Data->ad_LoadFrames));
+
+                        if ((prevFrame) && (prevFrame->af_Frame.alf_BitMap))
+                        {
+                            priv->pp_Data->ad_FrameCurrent = prevFrame->af_Frame.alf_Frame;
+                            continue;
                         }
                         else
                         {
-                            if ((priv->pp_Data->ad_BufferProc) && (priv->pp_Data->ad_LoadFrames != -1))
-                                Signal((struct Task *)priv->pp_Data->ad_BufferProc, (1 << priv->pp_Data->ad_LoadFrames));
-
-                            if ((prevFrame) && (prevFrame->af_Frame.alf_BitMap))
-                            {
-                                priv->pp_Data->ad_FrameCurrent = prevFrame->af_Frame.alf_Frame;
-                                continue;
-                            }
-                            else
-                            {
-                                frame = 0;
-                                rendFrame->Source = priv->pp_Data->ad_KeyFrame;
-                            }
+                            frame = 0;
+                            rendFrame->Source = priv->pp_Data->ad_KeyFrame;
                         }
-
-                        priv->pp_Data->ad_FrameCurrent = frame;
-
-                        // frame has changed ... render it ..
-                        DoMethodA(priv->pp_Object, (Msg)&gprMsg);
-
-                        if ((priv->pp_Data->ad_Window) && !(priv->pp_Data->ad_Flags & ANIMDF_LAYOUT))
-                        {
-                            if (priv->pp_Data->ad_Tapedeck)
-                            {
-                                // update the tapedeck gadget..
-                                attrtags[0].ti_Tag = TDECK_CurrentFrame;
-                                attrtags[0].ti_Data = frame;
-                                attrtags[1].ti_Tag = TAG_IGNORE;
-
-                                SetAttrsA((Object *)priv->pp_Data->ad_Tapedeck, attrtags);
-                            }
-                            D(bug("[animation.datatype/PLAY]: %s: Asking DTObj to render..\n", __PRETTY_FUNCTION__));
-                            // tell the top level gadget to redraw...
-#if (0)
-                            gprMsg.MethodID   = OM_NOTIFY;
-                            gprMsg.gpr_RPort  = priv->pp_Data->ad_Window->RPort;
-                            gprMsg.gpr_GInfo  = NULL;
-                            gprMsg.gpr_Redraw = 0;
-                            DoGadgetMethodA(priv->pp_Object, priv->pp_Data->ad_Window, NULL, (Msg)&gprMsg);
-#else
-                            if ((winRP = CloneRastPort(priv->pp_Data->ad_Window->RPort)) != NULL)
-                            {
-                                BltBitMapRastPort(priv->pp_Data->ad_FrameBuffer,
-                                    priv->pp_Data->ad_HorizTop, priv->pp_Data->ad_VertTop,
-                                    winRP,
-                                    priv->pp_Data->ad_RenderLeft, priv->pp_Data->ad_RenderTop,
-                                    priv->pp_Data->ad_RenderWidth, priv->pp_Data->ad_RenderHeight, 0xC0);
-                                FreeRastPort(winRP);
-                            }
-#endif
-                        }
-                        prevFrame = curFrame;
-                        framelast = frame;
-#if (0)
                     }
-#endif
+
+                    priv->pp_Data->ad_FrameCurrent = frame;
+
+                    // frame has changed ... render it ..
+                    DoMethodA(priv->pp_Object, (Msg)&gprMsg);
+
+                    if ((priv->pp_Data->ad_Window) && !(priv->pp_Data->ad_Flags & ANIMDF_LAYOUT))
+                    {
+                        if (priv->pp_Data->ad_Tapedeck)
+                        {
+                            // update the tapedeck gadget..
+                            attrtags[0].ti_Tag = TDECK_CurrentFrame;
+                            attrtags[0].ti_Data = frame;
+                            attrtags[1].ti_Tag = TAG_IGNORE;
+
+                            SetAttrsA((Object *)priv->pp_Data->ad_Tapedeck, attrtags);
+                        }
+                        D(bug("[animation.datatype/PLAY]: %s: Asking DTObj to render..\n", __PRETTY_FUNCTION__));
+                        // tell the top level gadget to redraw...
+                        gprMsg.MethodID   = GM_RENDER;
+                        gprMsg.gpr_RPort  = priv->pp_Data->ad_Window->RPort;
+                        gprMsg.gpr_GInfo  = NULL;
+                        gprMsg.gpr_Redraw = 0;
+                        DoGadgetMethodA((struct Gadget *)priv->pp_Object, priv->pp_Data->ad_Window, NULL, (Msg)&gprMsg);
+                    }
+                    prevFrame = curFrame;
                 }
             }
             FreeSignal(priv->pp_Data->ad_PlayerTick);
