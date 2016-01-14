@@ -36,6 +36,8 @@
 
 #include "animationclass.h"
 
+#include <stdio.h>
+
 extern AROS_UFP3(ULONG, playerHookFunc,
     AROS_UFPA(struct Hook *, hook, A0),
     AROS_UFPA(struct Player *, obj, A2),
@@ -118,6 +120,25 @@ BOOL ProcEnabled(struct ProcessPrivate *priv, volatile ULONG *flags, ULONG flag)
     return FALSE;
 }
 
+char *GenTaskName(char *basename, char*taskname)
+{
+    int namLen, id = 0;
+    char *newName;
+
+    namLen = strlen(basename);
+    newName = AllocVec(namLen + strlen(taskname) + 2 + 5, MEMF_ANY);
+    while (TRUE)
+    {
+        if (id == 0)
+            sprintf(newName, "%s %s", basename, taskname);
+        else
+            sprintf(newName, "%s %s.%d", basename, taskname, id);
+        if (FindTask(newName) == NULL)
+            break;
+    }
+    return newName;
+}
+
 /*** PRIVATE METHODS ***/
 IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
 {
@@ -145,6 +166,8 @@ IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
 
     if (!animd->ad_PlayerData)
     {
+        char *projName = NULL;
+
         animd->ad_PlayerData = AllocMem(sizeof(struct ProcessPrivate), MEMF_ANY);
         animd->ad_PlayerData->pp_Object = (Object *)g;
         animd->ad_PlayerData->pp_Data = animd;
@@ -156,13 +179,26 @@ IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
         animd->ad_PlayerData->pp_BufferFlags = 0;
         animd->ad_LoadFrames = -1;
         animd->ad_PlayerTick = -1;
+
+        GetAttr(DTA_Name, (Object *)g, (IPTR *)&projName);
+        if (projName)
+        {
+            animd->ad_BaseName = FilePart(projName);
+            animd->ad_PlayerData->pp_BufferingName = GenTaskName(animd->ad_BaseName, "Buffering");
+            animd->ad_PlayerData->pp_PlayBackName = GenTaskName(animd->ad_BaseName, "Playback");
+        }
+        else
+        {
+            animd->ad_PlayerData->pp_BufferingName = GenTaskName("Animation", "Buffering");
+            animd->ad_PlayerData->pp_PlayBackName = GenTaskName("Animation", "Playback");
+        }
     }
 
     if ((animd->ad_PlayerData) && !(animd->ad_BufferProc))
     {
         animd->ad_BufferProc = CreateNewProcTags(
                             NP_Entry,           (IPTR)bufferProc,
-                            NP_Name,            (IPTR)"Animation Buffering",
+                            NP_Name,            (IPTR)animd->ad_PlayerData->pp_BufferingName,
                             NP_Priority,        (IPTR)((BYTE)-1),
                             NP_Synchronous,     FALSE,
                             NP_Input,           Input (),
@@ -183,7 +219,7 @@ IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
     {
         animd->ad_PlayerProc = CreateNewProcTags(
                             NP_Entry,           (IPTR)playerProc,
-                            NP_Name,            (IPTR)"Animation Playback",
+                            NP_Name,            (IPTR)animd->ad_PlayerData->pp_PlayBackName,
                             NP_Priority,        0,
                             NP_Synchronous,     FALSE,
                             NP_Input,           Input (),
@@ -383,7 +419,7 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer
         }
 
         // remap the source ..
-        if ((tmpline = AllocVec(animd->ad_BitMapHeader.bmh_Width, MEMF_ANY)) != NULL)
+        if (animd->ad_FrameBuffer && ((tmpline = AllocVec(animd->ad_BitMapHeader.bmh_Width, MEMF_ANY)) != NULL))
         {
             UBYTE srcdepth, buffdepth;
             srcdepth = (UBYTE)GetBitMapAttr(msg->Source, BMA_DEPTH);
@@ -1014,7 +1050,11 @@ IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
     }
 
     if (animd->ad_PlayerData)
+    {
+        FreeVec(animd->ad_PlayerData->pp_BufferingName);
+        FreeVec(animd->ad_PlayerData->pp_PlayBackName);
         FreeMem(animd->ad_PlayerData, sizeof(struct ProcessPrivate));
+    }
 
     ForeachNodeSafe(&animd->ad_AnimFrames, curFrame, lastFrame)
     {

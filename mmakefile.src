@@ -7,6 +7,7 @@ FILES := animationclass animationbuffer animationplayback animationsave
 #MM workbench-datatype-animation : includes linklibs
 
 USER_CFLAGS   := -DMYDEBUG
+USER_LDFLAGS := -static
 
 %build_module mmake=workbench-datatype-animation \
     modname=animation modtype=datatype \

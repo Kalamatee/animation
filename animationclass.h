@@ -30,6 +30,7 @@ BOOL ProcEnabled(struct ProcessPrivate *priv, volatile ULONG *flags, ULONG flag)
 
 struct Animation_Data
 {
+    char                        *ad_BaseName;
     ULONG                       ad_Flags;               /* object control flags                 */
     UWORD                       ad_Frames;              /* # of frames                          */
     UWORD                       ad_FrameCurrent;
@@ -78,6 +79,8 @@ struct ProcessPrivate
 {
     Object                      *pp_Object;
     struct Animation_Data       *pp_Data;
+    char                        *pp_PlayBackName;
+    char                        *pp_BufferingName;
     struct SignalSemaphore      pp_FlagsLock;
     volatile ULONG              pp_PlayerFlags;
     volatile ULONG              pp_BufferFlags;
