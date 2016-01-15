@@ -246,6 +246,7 @@ AROS_UFH3(void, playerProc,
                         DoGadgetMethodA((struct Gadget *)priv->pp_Object, priv->pp_Data->ad_Window, NULL, (Msg)&gprMsg);
                     }
                     prevFrame = curFrame;
+                    Signal((struct Task *)priv->pp_Data->ad_BufferProc, (1 << priv->pp_BufferPurge));
                 }
             }
             FreePlaybackSignals(priv);
