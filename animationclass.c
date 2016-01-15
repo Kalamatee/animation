@@ -106,20 +106,6 @@ struct DTMethod SupportedTriggerMethods[] =
     { NULL,                     NULL,                   0               },
 };
 
-BOOL ProcEnabled(struct ProcessPrivate *priv, volatile ULONG *flags, ULONG flag)
-{
-    ULONG flagval;
-
-    ObtainSemaphoreShared(&priv->pp_FlagsLock);
-    flagval = *flags;
-    ReleaseSemaphore(&priv->pp_FlagsLock);
-
-    if (flagval & flag)
-        return TRUE;
-
-    return FALSE;
-}
-
 char *GenTaskName(char *basename, char*taskname)
 {
     int namLen, id = 0;
@@ -164,72 +150,79 @@ IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
     }
     D(bug("[animation.datatype] %s: Realtime Player @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_Player));
 
-    if (!animd->ad_PlayerData)
+    if (!animd->ad_ProcessData)
     {
         char *projName = NULL;
 
-        animd->ad_PlayerData = AllocMem(sizeof(struct ProcessPrivate), MEMF_ANY);
-        animd->ad_PlayerData->pp_Object = (Object *)g;
-        animd->ad_PlayerData->pp_Data = animd;
-        animd->ad_PlayerData->pp_BufferFrames = 3 * animd->ad_FramesPerSec;
-        animd->ad_PlayerData->pp_BufferLevel = 0;
-        InitSemaphore(&animd->ad_AnimFramesLock);
-        InitSemaphore(&animd->ad_PlayerData->pp_FlagsLock);
-        animd->ad_PlayerData->pp_PlayerFlags = 0;
-        animd->ad_PlayerData->pp_BufferFlags = 0;
-        animd->ad_LoadFrames = -1;
-        animd->ad_PlayerTick = -1;
+        animd->ad_ProcessData = AllocMem(sizeof(struct ProcessPrivate), MEMF_ANY);
+        animd->ad_ProcessData->pp_Object = (Object *)g;
+        animd->ad_ProcessData->pp_Data = animd;
+        animd->ad_ProcessData->pp_BufferFrames = 3 * animd->ad_TimerData.atd_FramesPerSec;
+        animd->ad_ProcessData->pp_BufferLevel = 0;
+        InitSemaphore(&animd->ad_FrameData.afd_AnimFramesLock);
 
+        animd->ad_ProcessData->pp_PlayerFlags = 0;
+        animd->ad_ProcessData->pp_BufferFlags = 0;
+
+        animd->ad_ProcessData->pp_BufferEnable = -1;
+        animd->ad_ProcessData->pp_BufferDisable = -1;
+        animd->ad_ProcessData->pp_BufferFill = -1;
+        animd->ad_ProcessData->pp_BufferPurge = -1;
+
+        animd->ad_ProcessData->pp_PlaybackEnable = -1;
+        animd->ad_ProcessData->pp_PlaybackDisable = -1;
+        animd->ad_ProcessData->pp_PlaybackTick = -1;
+        
         GetAttr(DTA_Name, (Object *)g, (IPTR *)&projName);
         if (projName)
         {
             animd->ad_BaseName = FilePart(projName);
-            animd->ad_PlayerData->pp_BufferingName = GenTaskName(animd->ad_BaseName, "Buffering");
-            animd->ad_PlayerData->pp_PlayBackName = GenTaskName(animd->ad_BaseName, "Playback");
+            animd->ad_ProcessData->pp_BufferingName = GenTaskName(animd->ad_BaseName, "Buffering");
+            animd->ad_ProcessData->pp_PlayBackName = GenTaskName(animd->ad_BaseName, "Playback");
         }
         else
         {
-            animd->ad_PlayerData->pp_BufferingName = GenTaskName("Animation", "Buffering");
-            animd->ad_PlayerData->pp_PlayBackName = GenTaskName("Animation", "Playback");
+            animd->ad_ProcessData->pp_BufferingName = GenTaskName("Animation", "Buffering");
+            animd->ad_ProcessData->pp_PlayBackName = GenTaskName("Animation", "Playback");
         }
     }
 
-    if ((animd->ad_PlayerData) && !(animd->ad_BufferProc))
+    if ((animd->ad_ProcessData) && !(animd->ad_BufferProc))
     {
         animd->ad_BufferProc = CreateNewProcTags(
                             NP_Entry,           (IPTR)bufferProc,
-                            NP_Name,            (IPTR)animd->ad_PlayerData->pp_BufferingName,
+                            NP_Name,            (IPTR)animd->ad_ProcessData->pp_BufferingName,
                             NP_Priority,        (IPTR)((BYTE)-1),
                             NP_Synchronous,     FALSE,
                             NP_Input,           Input (),
                             NP_CloseInput,      FALSE,
                             NP_Output,          Output (),
                             NP_CloseOutput,     FALSE,
-                            NP_UserData,        (IPTR)animd->ad_PlayerData,
+                            NP_UserData,        (IPTR)animd->ad_ProcessData,
                             NP_StackSize,       400000,
                             TAG_DONE);
-        while (!ProcEnabled(animd->ad_PlayerData, &animd->ad_PlayerData->pp_BufferFlags, PRIVPROCF_RUNNING))
+        while (!(animd->ad_ProcessData->pp_BufferFlags & PRIVPROCF_RUNNING))
         {
             Delay (1);
         }
     }
     D(bug("[animation.datatype] %s: Buffering Process @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_BufferProc));
 
-    if ((animd->ad_PlayerData) && !(animd->ad_PlayerProc))
+    if ((animd->ad_ProcessData) && !(animd->ad_PlayerProc))
     {
         animd->ad_PlayerProc = CreateNewProcTags(
                             NP_Entry,           (IPTR)playerProc,
-                            NP_Name,            (IPTR)animd->ad_PlayerData->pp_PlayBackName,
+                            NP_Name,            (IPTR)animd->ad_ProcessData->pp_PlayBackName,
                             NP_Priority,        0,
                             NP_Synchronous,     FALSE,
                             NP_Input,           Input (),
                             NP_CloseInput,      FALSE,
                             NP_Output,          Output (),
                             NP_CloseOutput,     FALSE,
-                            NP_UserData,        (IPTR)animd->ad_PlayerData,
+                            NP_UserData,        (IPTR)animd->ad_ProcessData,
                             NP_StackSize,       400000,
                             TAG_DONE);
-        while (!ProcEnabled(animd->ad_PlayerData, &animd->ad_PlayerData->pp_PlayerFlags, PRIVPROCF_RUNNING))
+        while (!(animd->ad_ProcessData->pp_PlayerFlags & PRIVPROCF_RUNNING))
         {
             Delay (1);
         }
@@ -246,17 +239,17 @@ IPTR DT_FreePens(struct IClass *cl, struct Gadget *g, Msg msg)
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
-    if ((animd->ad_ColorMap) && (animd->ad_NumAlloc > 0))
+    if ((animd->ad_ColorData.acd_ColorMap) && (animd->ad_ColorData.acd_NumAlloc > 0))
     {
-        D(bug("[animation.datatype] %s: attempting to free %d pens\n", __PRETTY_FUNCTION__, animd->ad_NumAlloc));
-        D(bug("[animation.datatype] %s: colormap @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorMap));
-        for (i = animd->ad_NumAlloc - 1; i >= 0; i--)
+        D(bug("[animation.datatype] %s: attempting to free %d pens\n", __PRETTY_FUNCTION__, animd->ad_ColorData.acd_NumAlloc));
+        D(bug("[animation.datatype] %s: colormap @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorData.acd_ColorMap));
+        for (i = animd->ad_ColorData.acd_NumAlloc - 1; i >= 0; i--)
         {
-            D(bug("[animation.datatype] %s: freeing pen %d\n", __PRETTY_FUNCTION__, animd->ad_Allocated[i]));
-            ReleasePen(animd->ad_ColorMap, animd->ad_Allocated[i]);
+            D(bug("[animation.datatype] %s: freeing pen %d\n", __PRETTY_FUNCTION__, animd->ad_ColorData.acd_Allocated[i]));
+            ReleasePen(animd->ad_ColorData.acd_ColorMap, animd->ad_ColorData.acd_Allocated[i]);
         }
 
-        animd->ad_NumAlloc = 0;
+        animd->ad_ColorData.acd_NumAlloc = 0;
         animd->ad_Flags &= ~ANIMDF_REMAPPEDPENS;
     }
 
@@ -269,21 +262,21 @@ IPTR DT_FreeColorTables(struct IClass *cl, struct Gadget *g, Msg msg)
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
-    if (animd->ad_ColorRegs)
-        FreeMem(animd->ad_ColorRegs, 1 + animd->ad_NumColors * sizeof (struct ColorRegister));
-    if (animd->ad_ColorTable)
-        FreeMem(animd->ad_ColorTable, 1 + animd->ad_NumColors * sizeof (UBYTE));
-    if (animd->ad_ColorTable2)
-        FreeMem(animd->ad_ColorTable2, 1 + animd->ad_NumColors * sizeof (UBYTE));
-    if (animd->ad_Allocated)
+    if (animd->ad_ColorData.acd_ColorRegs)
+        FreeMem(animd->ad_ColorData.acd_ColorRegs, 1 + animd->ad_ColorData.acd_NumColors * sizeof (struct ColorRegister));
+    if (animd->ad_ColorData.acd_ColorTable[0])
+        FreeMem(animd->ad_ColorData.acd_ColorTable[0], 1 + animd->ad_ColorData.acd_NumColors * sizeof (UBYTE));
+    if (animd->ad_ColorData.acd_ColorTable[1])
+        FreeMem(animd->ad_ColorData.acd_ColorTable[1], 1 + animd->ad_ColorData.acd_NumColors * sizeof (UBYTE));
+    if (animd->ad_ColorData.acd_Allocated)
     {
         DoMethod((Object *)g, PRIVATE_FREEPENS);
-        FreeMem(animd->ad_Allocated, 1 + animd->ad_NumColors * sizeof (UBYTE));
+        FreeMem(animd->ad_ColorData.acd_Allocated, 1 + animd->ad_ColorData.acd_NumColors * sizeof (UBYTE));
     }
-    if (animd->ad_CRegs)
-        FreeMem(animd->ad_CRegs, 1 + animd->ad_NumColors * (sizeof (ULONG) * 3));
-    if (animd->ad_GRegs)
-        FreeMem(animd->ad_GRegs, 1 + animd->ad_NumColors * (sizeof (ULONG) * 3));
+    if (animd->ad_ColorData.acd_CRegs)
+        FreeMem(animd->ad_ColorData.acd_CRegs, 1 + animd->ad_ColorData.acd_NumColors * (sizeof (ULONG) * 3));
+    if (animd->ad_ColorData.acd_GRegs)
+        FreeMem(animd->ad_ColorData.acd_GRegs, 1 + animd->ad_ColorData.acd_NumColors * (sizeof (ULONG) * 3));
 
     return 1;
 }
@@ -294,26 +287,26 @@ IPTR DT_AllocColorTables(struct IClass *cl, struct Gadget *g, struct privAllocCo
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
-    if ((msg->NumColors != animd->ad_NumColors) && 
-        (animd->ad_NumColors > 0))
+    if ((msg->NumColors != animd->ad_ColorData.acd_NumColors) && 
+        (animd->ad_ColorData.acd_NumColors > 0))
     {
         DoMethod((Object *)g, PRIVATE_FREECOLORTABLES);
     }
-    animd->ad_NumColors = msg->NumColors;
-    if (animd->ad_NumColors > 0)
+    animd->ad_ColorData.acd_NumColors = msg->NumColors;
+    if (animd->ad_ColorData.acd_NumColors > 0)
     {
-        animd->ad_ColorRegs = AllocMem(1 + animd->ad_NumColors * sizeof (struct ColorRegister), MEMF_CLEAR);
-        D(bug("[animation.datatype] %s: ColorRegs @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorRegs));
-        animd->ad_ColorTable = AllocMem(1 + animd->ad_NumColors * sizeof (UBYTE), MEMF_CLEAR); // shared pen table
-        D(bug("[animation.datatype] %s: ColorTable @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorTable));
-        animd->ad_ColorTable2 = AllocMem(1 + animd->ad_NumColors * sizeof (UBYTE), MEMF_CLEAR);
-        D(bug("[animation.datatype] %s: ColorTable2 @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorTable2));
-        animd->ad_Allocated = AllocMem(1 + animd->ad_NumColors * sizeof (UBYTE), MEMF_CLEAR);
-        D(bug("[animation.datatype] %s: Allocated pens Array @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_Allocated));
-        animd->ad_CRegs = AllocMem(1 + animd->ad_NumColors * (sizeof (ULONG) * 3), MEMF_CLEAR); // RGB32 triples used with SetRGB32CM
-        D(bug("[animation.datatype] %s: CRegs @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_CRegs));
-        animd->ad_GRegs = AllocMem(1 + animd->ad_NumColors * (sizeof (ULONG) * 3), MEMF_CLEAR); // remapped version of ad_CRegs
-        D(bug("[animation.datatype] %s: GRegs @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_GRegs));
+        animd->ad_ColorData.acd_ColorRegs = AllocMem(1 + animd->ad_ColorData.acd_NumColors * sizeof (struct ColorRegister), MEMF_CLEAR);
+        D(bug("[animation.datatype] %s: ColorRegs @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorData.acd_ColorRegs));
+        animd->ad_ColorData.acd_ColorTable[0] = AllocMem(1 + animd->ad_ColorData.acd_NumColors * sizeof (UBYTE), MEMF_CLEAR); // shared pen table
+        D(bug("[animation.datatype] %s: ColorTable @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorData.acd_ColorTable[0]));
+        animd->ad_ColorData.acd_ColorTable[1] = AllocMem(1 + animd->ad_ColorData.acd_NumColors * sizeof (UBYTE), MEMF_CLEAR);
+        D(bug("[animation.datatype] %s: ColorTable2 @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorData.acd_ColorTable[1]));
+        animd->ad_ColorData.acd_Allocated = AllocMem(1 + animd->ad_ColorData.acd_NumColors * sizeof (UBYTE), MEMF_CLEAR);
+        D(bug("[animation.datatype] %s: Allocated pens Array @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorData.acd_Allocated));
+        animd->ad_ColorData.acd_CRegs = AllocMem(1 + animd->ad_ColorData.acd_NumColors * (sizeof (ULONG) * 3), MEMF_CLEAR); // RGB32 triples used with SetRGB32CM
+        D(bug("[animation.datatype] %s: CRegs @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorData.acd_CRegs));
+        animd->ad_ColorData.acd_GRegs = AllocMem(1 + animd->ad_ColorData.acd_NumColors * (sizeof (ULONG) * 3), MEMF_CLEAR); // remapped version of ad_ColorData.acd_CRegs
+        D(bug("[animation.datatype] %s: GRegs @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorData.acd_GRegs));
     }
 
     return 1;
@@ -345,7 +338,7 @@ IPTR DT_RenderBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffe
 
     if (msg->Source)
     {
-        if ((animd->ad_NumColors > 0) && (animd->ad_Flags & ANIMDF_REMAP))
+        if ((animd->ad_ColorData.acd_NumColors > 0) && (animd->ad_Flags & ANIMDF_REMAP))
         {
             DoMethod((Object *)g, PRIVATE_REMAPBUFFER, msg->Source);
         }
@@ -383,7 +376,7 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer
     struct RastPort *remapRP, *targetRP;
     struct TagItem bestpenTags[] =
     {
-        { OBP_Precision,        animd->ad_PenPrecison   },
+        { OBP_Precision,        animd->ad_ColorData.acd_PenPrecison   },
         { TAG_DONE,             0                       }
     };
     UBYTE *tmpline, *outline;
@@ -394,26 +387,26 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer
 
     if (animd->ad_Window)
     {
-        if ((animd->ad_NumColors > 0) && !(animd->ad_Flags & ANIMDF_REMAPPEDPENS))
+        if ((animd->ad_ColorData.acd_NumColors > 0) && !(animd->ad_Flags & ANIMDF_REMAPPEDPENS))
         {
-            animd->ad_ColorMap = animd->ad_Window->WScreen->ViewPort.ColorMap;
-            D(bug("[animation.datatype] %s: colormap @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorMap));
+            animd->ad_ColorData.acd_ColorMap = animd->ad_Window->WScreen->ViewPort.ColorMap;
+            D(bug("[animation.datatype] %s: colormap @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_ColorData.acd_ColorMap));
 
-            for (i = 0; i < animd->ad_NumColors; i++)
+            for (i = 0; i < animd->ad_ColorData.acd_NumColors; i++)
             {
-                curpen = animd->ad_NumAlloc++;
-                animd->ad_Allocated[curpen] = ObtainBestPenA(animd->ad_ColorMap,
-                    animd->ad_CRegs[i * 3], animd->ad_CRegs[i * 3 + 1], animd->ad_CRegs[i * 3 + 2],
+                curpen = animd->ad_ColorData.acd_NumAlloc++;
+                animd->ad_ColorData.acd_Allocated[curpen] = ObtainBestPenA(animd->ad_ColorData.acd_ColorMap,
+                    animd->ad_ColorData.acd_CRegs[i * 3], animd->ad_ColorData.acd_CRegs[i * 3 + 1], animd->ad_ColorData.acd_CRegs[i * 3 + 2],
                     bestpenTags);
 
                 // get the actual color components for the pen.
                 GetRGB32(animd->ad_Window->WScreen->ViewPort.ColorMap,
-                    animd->ad_Allocated[curpen], 1, &animd->ad_GRegs[animd->ad_NumAlloc * 3]);
+                    animd->ad_ColorData.acd_Allocated[curpen], 1, &animd->ad_ColorData.acd_GRegs[animd->ad_ColorData.acd_NumAlloc * 3]);
 
-                D(bug("[animation.datatype] %s: bestpen #%d for %02x%02x%02x\n", __PRETTY_FUNCTION__, animd->ad_Allocated[curpen], (animd->ad_CRegs[i * 3] & 0xFF), (animd->ad_CRegs[i * 3 + 1] & 0xFF), (animd->ad_CRegs[i * 3 + 2] & 0xFF)));
+                D(bug("[animation.datatype] %s: bestpen #%d for %02x%02x%02x\n", __PRETTY_FUNCTION__, animd->ad_ColorData.acd_Allocated[curpen], (animd->ad_ColorData.acd_CRegs[i * 3] & 0xFF), (animd->ad_ColorData.acd_CRegs[i * 3 + 1] & 0xFF), (animd->ad_ColorData.acd_CRegs[i * 3 + 2] & 0xFF)));
 
-                animd->ad_ColorTable[i] = animd->ad_Allocated[curpen];
-                animd->ad_ColorTable2[i] = animd->ad_Allocated[curpen];
+                animd->ad_ColorData.acd_ColorTable[0][i] = animd->ad_ColorData.acd_Allocated[curpen];
+                animd->ad_ColorData.acd_ColorTable[1][i] = animd->ad_ColorData.acd_Allocated[curpen];
             }
             animd->ad_Flags |= ANIMDF_REMAPPEDPENS;
         }
@@ -468,11 +461,11 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer
                             if (buffdepth <= 8)
                             {
                                 compose = FALSE;
-                                outline[x] = animd->ad_ColorTable2[curpen];
+                                outline[x] = animd->ad_ColorData.acd_ColorTable[1][curpen];
                             }
-                            hamr = (animd->ad_CRegs[curpen * 3] & 0xFF);
-                            hamg = (animd->ad_CRegs[curpen * 3 + 1] & 0xFF);
-                            hamb = (animd->ad_CRegs[curpen * 3 + 2] & 0xFF);
+                            hamr = (animd->ad_ColorData.acd_CRegs[curpen * 3] & 0xFF);
+                            hamg = (animd->ad_ColorData.acd_CRegs[curpen * 3 + 1] & 0xFF);
+                            hamb = (animd->ad_ColorData.acd_CRegs[curpen * 3 + 2] & 0xFF);
                         }
                         else if (HAMFlag(srcdepth, curpen) == 1)
                         {
@@ -518,7 +511,7 @@ IPTR DT_RemapBuffer(struct IClass *cl, struct Gadget *g, struct privRenderBuffer
                     for(x = 0; x < animd->ad_BitMapHeader.bmh_Width; x++)
                     {
                         curpen = tmpline[x];
-                        outline[x] = animd->ad_ColorTable2[curpen];
+                        outline[x] = animd->ad_ColorData.acd_ColorTable[1][curpen];
                     }
 
                     WritePixelLine8(targetRP,0,i,animd->ad_BitMapHeader.bmh_Width,outline,NULL);
@@ -575,17 +568,17 @@ IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
 
     case ADTA_Frames:
         D(bug("[animation.datatype] %s: ADTA_Frames\n", __PRETTY_FUNCTION__));
-        *msg->opg_Storage = (IPTR) animd->ad_Frames;
+        *msg->opg_Storage = (IPTR) animd->ad_FrameData.afd_Frames;
         break;
 
     case ADTA_Frame:
         D(bug("[animation.datatype] %s: ADTA_Frame\n", __PRETTY_FUNCTION__));
-        *msg->opg_Storage = (IPTR) animd->ad_FrameCurrent;
+        *msg->opg_Storage = (IPTR) animd->ad_FrameData.afd_FrameCurrent;
         break;
 
     case ADTA_FramesPerSecond:
         D(bug("[animation.datatype] %s: ADTA_FramesPerSecond\n", __PRETTY_FUNCTION__));
-        *msg->opg_Storage = (IPTR) animd->ad_FramesPerSec;
+        *msg->opg_Storage = (IPTR) animd->ad_TimerData.atd_FramesPerSec;
         break;
 
     case ADTA_FrameIncrement:
@@ -609,49 +602,49 @@ IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
 
     case ADTA_NumColors:
         D(bug("[animation.datatype] %s: ADTA_NumColors\n", __PRETTY_FUNCTION__));
-        *msg->opg_Storage = (IPTR) animd->ad_NumColors;
+        *msg->opg_Storage = (IPTR) animd->ad_ColorData.acd_NumColors;
         D(bug("[animation.datatype] %s:     = %d\n", __PRETTY_FUNCTION__, *msg->opg_Storage));
         break;
 
     case ADTA_NumAlloc:
         D(bug("[animation.datatype] %s: ADTA_NumAlloc\n", __PRETTY_FUNCTION__));
-        *msg->opg_Storage = (IPTR) animd->ad_NumAlloc;
+        *msg->opg_Storage = (IPTR) animd->ad_ColorData.acd_NumAlloc;
         D(bug("[animation.datatype] %s:     = %d\n", __PRETTY_FUNCTION__, *msg->opg_Storage));
         break;
 
     case ADTA_ColorRegisters:
         D(bug("[animation.datatype] %s: ADTA_ColorRegisters\n", __PRETTY_FUNCTION__));
-        *msg->opg_Storage = (IPTR) animd->ad_ColorRegs;
+        *msg->opg_Storage = (IPTR) animd->ad_ColorData.acd_ColorRegs;
         D(bug("[animation.datatype] %s:     = %p\n", __PRETTY_FUNCTION__, *msg->opg_Storage));
         break;
 
     case ADTA_ColorTable:
         D(bug("[animation.datatype] %s: ADTA_ColorTable\n", __PRETTY_FUNCTION__));
-        *msg->opg_Storage = (IPTR) animd->ad_ColorTable;
+        *msg->opg_Storage = (IPTR) animd->ad_ColorData.acd_ColorTable[0];
         D(bug("[animation.datatype] %s:     = %p\n", __PRETTY_FUNCTION__, *msg->opg_Storage));
         break;
 
     case ADTA_ColorTable2:
         D(bug("[animation.datatype] %s: ADTA_ColorTable2\n", __PRETTY_FUNCTION__));
-        *msg->opg_Storage = (IPTR) animd->ad_ColorTable2;
+        *msg->opg_Storage = (IPTR) animd->ad_ColorData.acd_ColorTable[1];
         D(bug("[animation.datatype] %s:     = %p\n", __PRETTY_FUNCTION__, *msg->opg_Storage));
         break;
 
     case ADTA_Allocated:
         D(bug("[animation.datatype] %s: ADTA_Allocated\n", __PRETTY_FUNCTION__));
-        *msg->opg_Storage = (IPTR) animd->ad_Allocated;
+        *msg->opg_Storage = (IPTR) animd->ad_ColorData.acd_Allocated;
         D(bug("[animation.datatype] %s:     = %p\n", __PRETTY_FUNCTION__, *msg->opg_Storage));
         break;
 
     case ADTA_CRegs:
         D(bug("[animation.datatype] %s: ADTA_CRegs\n", __PRETTY_FUNCTION__));
-        *msg->opg_Storage = (IPTR) animd->ad_CRegs;
+        *msg->opg_Storage = (IPTR) animd->ad_ColorData.acd_CRegs;
         D(bug("[animation.datatype] %s:     = %p\n", __PRETTY_FUNCTION__, *msg->opg_Storage));
         break;
 
     case ADTA_GRegs:
         D(bug("[animation.datatype] %s: ADTA_GRegs\n", __PRETTY_FUNCTION__));
-        *msg->opg_Storage = (IPTR) animd->ad_GRegs;
+        *msg->opg_Storage = (IPTR) animd->ad_ColorData.acd_GRegs;
         D(bug("[animation.datatype] %s:     = %p\n", __PRETTY_FUNCTION__, *msg->opg_Storage));
         break;
 
@@ -730,7 +723,7 @@ IPTR DT_GetMethod(struct IClass *cl, struct Gadget *g, struct opGet *msg)
 #endif
 
     case OBP_Precision:
-        *msg->opg_Storage = (IPTR) animd->ad_PenPrecison;
+        *msg->opg_Storage = (IPTR) animd->ad_ColorData.acd_PenPrecison;
         break;
 
     default:
@@ -794,7 +787,7 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
 
         case ADTA_Frames:
             D(bug("[animation.datatype] %s: ADTA_Frames (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
-            animd->ad_Frames = (UWORD) tag->ti_Data;
+            animd->ad_FrameData.afd_Frames = (UWORD) tag->ti_Data;
             if (animd->ad_Tapedeck)
             {
                 attrtags[0].ti_Tag = TDECK_Frames;
@@ -815,15 +808,15 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
 
         case ADTA_FramesPerSecond:
             D(bug("[animation.datatype] %s: ADTA_FramesPerSecond (%d)\n", __PRETTY_FUNCTION__, tag->ti_Data));
-            animd->ad_FramesPerSec = (UWORD) tag->ti_Data;
-            if (animd->ad_FramesPerSec == 0)
-                animd->ad_FramesPerSec = 1;
-            else if (animd->ad_FramesPerSec > 60)
-                animd->ad_FramesPerSec = 60;
-            animd->ad_TicksPerFrame = (ANIMPLAYER_TICKFREQ / animd->ad_FramesPerSec);
-            if (animd->ad_PlayerData)
+            animd->ad_TimerData.atd_FramesPerSec = (UWORD) tag->ti_Data;
+            if (animd->ad_TimerData.atd_FramesPerSec == 0)
+                animd->ad_TimerData.atd_FramesPerSec = 1;
+            else if (animd->ad_TimerData.atd_FramesPerSec > 60)
+                animd->ad_TimerData.atd_FramesPerSec = 60;
+            animd->ad_TimerData.atd_TicksPerFrame = (ANIMPLAYER_TICKFREQ / animd->ad_TimerData.atd_FramesPerSec);
+            if (animd->ad_ProcessData)
             {
-                animd->ad_PlayerData->pp_BufferFrames = 3 * animd->ad_FramesPerSec;
+                animd->ad_ProcessData->pp_BufferFrames = 3 * animd->ad_TimerData.atd_FramesPerSec;
             }
             break;
 
@@ -928,7 +921,7 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
             break;
 #endif
         case OBP_Precision:
-            animd->ad_PenPrecison = (ULONG)tag->ti_Data;
+            animd->ad_ColorData.acd_PenPrecison = (ULONG)tag->ti_Data;
             break;
         }
     }
@@ -957,15 +950,15 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
 
         animd = (struct Animation_Data *) INST_DATA(cl, g);
 
-        NewList(&animd->ad_AnimFrames);
+        NewList(&animd->ad_FrameData.afd_AnimFrames);
 
         animd->ad_Flags = ANIMDF_CONTROLPANEL|ANIMDF_REMAP;
 #if (1)
         animd->ad_Flags |= ANIMDF_IMMEDIATE;
 #endif
-        animd->ad_FramesPerSec = 60;
-        animd->ad_TicksPerFrame = ANIMPLAYER_TICKFREQ / animd->ad_FramesPerSec;
-        animd->ad_PenPrecison = PRECISION_IMAGE;
+        animd->ad_TimerData.atd_FramesPerSec = 60;
+        animd->ad_TimerData.atd_TicksPerFrame = ANIMPLAYER_TICKFREQ / animd->ad_TimerData.atd_FramesPerSec;
+        animd->ad_ColorData.acd_PenPrecison = PRECISION_IMAGE;
 
         if (msg->ops_AttrList)
         {
@@ -997,19 +990,18 @@ IPTR DT_RemoveDTObject(struct IClass *cl, Object *o, Msg msg)
 
     DoMethod(o, ADTM_STOP);
 
-    if (animd->ad_PlayerData)
+    if (animd->ad_ProcessData)
     {
         // disable our subprocesses ..
-        ObtainSemaphore(&animd->ad_PlayerData->pp_FlagsLock);
-        animd->ad_PlayerData->pp_BufferFlags &= ~PRIVPROCF_ENABLED;
-        animd->ad_PlayerData->pp_PlayerFlags &= ~PRIVPROCF_ENABLED;
-        ReleaseSemaphore(&animd->ad_PlayerData->pp_FlagsLock);
+        Signal((struct Task *)animd->ad_BufferProc, (1 << animd->ad_ProcessData->pp_BufferDisable));
+        Signal((struct Task *)animd->ad_PlayerProc, (1 << animd->ad_ProcessData->pp_PlaybackDisable));
+
         // wait for them to finish ...
-        while (ProcEnabled(animd->ad_PlayerData, &animd->ad_PlayerData->pp_BufferFlags, PRIVPROCF_ACTIVE))
+        while (animd->ad_ProcessData->pp_BufferFlags & PRIVPROCF_ACTIVE)
         {
             Delay (1);
         }
-        while (ProcEnabled(animd->ad_PlayerData, &animd->ad_PlayerData->pp_PlayerFlags, PRIVPROCF_ACTIVE))
+        while (animd->ad_ProcessData->pp_PlayerFlags & PRIVPROCF_ACTIVE)
         {
             Delay (1);
         }
@@ -1033,7 +1025,7 @@ IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
     {
         Signal((struct Task *)animd->ad_BufferProc, SIGBREAKF_CTRL_C);
 
-        while (ProcEnabled(animd->ad_PlayerData, &animd->ad_PlayerData->pp_BufferFlags, PRIVPROCF_RUNNING))
+        while (animd->ad_ProcessData->pp_BufferFlags & PRIVPROCF_RUNNING)
         {
             Delay (1);
         }
@@ -1043,20 +1035,20 @@ IPTR DT_DisposeMethod(struct IClass *cl, Object *o, Msg msg)
     {
         Signal((struct Task *)animd->ad_PlayerProc, SIGBREAKF_CTRL_C);
 
-        while (ProcEnabled(animd->ad_PlayerData, &animd->ad_PlayerData->pp_PlayerFlags, PRIVPROCF_RUNNING))
+        while (animd->ad_ProcessData->pp_PlayerFlags & PRIVPROCF_RUNNING)
         {
             Delay (1);
         }
     }
 
-    if (animd->ad_PlayerData)
+    if (animd->ad_ProcessData)
     {
-        FreeVec(animd->ad_PlayerData->pp_BufferingName);
-        FreeVec(animd->ad_PlayerData->pp_PlayBackName);
-        FreeMem(animd->ad_PlayerData, sizeof(struct ProcessPrivate));
+        FreeVec(animd->ad_ProcessData->pp_BufferingName);
+        FreeVec(animd->ad_ProcessData->pp_PlayBackName);
+        FreeMem(animd->ad_ProcessData, sizeof(struct ProcessPrivate));
     }
 
-    ForeachNodeSafe(&animd->ad_AnimFrames, curFrame, lastFrame)
+    ForeachNodeSafe(&animd->ad_FrameData.afd_AnimFrames, curFrame, lastFrame)
     {
         D(bug("[animation.datatype] %s: disposing of frame @ 0x%p\n", __PRETTY_FUNCTION__, curFrame));
         Remove(&curFrame->af_Node);
@@ -1118,13 +1110,6 @@ IPTR DT_Layout(struct IClass *cl, struct Gadget *g, struct gpLayout *msg)
     animd->ad_Window = msg->gpl_GInfo->gi_Window;
 
     RetVal = DoSuperMethodA(cl, (Object *)g, (Msg)msg);
-
-    if (animd->ad_PlayerData)
-    {
-        // enable our subprocesses ..
-        animd->ad_PlayerData->pp_BufferFlags |= PRIVPROCF_ENABLED;
-        animd->ad_PlayerData->pp_PlayerFlags |= PRIVPROCF_ENABLED;
-    }
 
     GetAttr(DTA_Domain, (Object *)g, (IPTR *)&gadBox);
 
@@ -1323,7 +1308,7 @@ IPTR DT_Pause(struct IClass *cl, struct Gadget *g, struct opSet *msg)
         };
         SetAttrsA((Object *)animd->ad_Tapedeck, tdAttrs);
     }
-    SetConductorState (animd->ad_Player, CONDSTATE_PAUSED, animd->ad_FrameCurrent * animd->ad_TicksPerFrame);
+    SetConductorState (animd->ad_Player, CONDSTATE_PAUSED, animd->ad_FrameData.afd_FrameCurrent * animd->ad_TimerData.atd_TicksPerFrame);
 
     return NULL;
 }
@@ -1343,12 +1328,12 @@ IPTR DT_Start(struct IClass *cl, struct Gadget *g, struct adtStart *msg)
         };
         SetAttrsA((Object *)animd->ad_Tapedeck, tdAttrs);
     }
-    SetConductorState(animd->ad_Player, CONDSTATE_RUNNING, msg->asa_Frame * animd->ad_TicksPerFrame);
-    if (animd->ad_PlayerData)
+    SetConductorState(animd->ad_Player, CONDSTATE_RUNNING, msg->asa_Frame * animd->ad_TimerData.atd_TicksPerFrame);
+    if (animd->ad_ProcessData)
     {
         // enable our subprocesses ..
-        animd->ad_PlayerData->pp_BufferFlags |= PRIVPROCF_ENABLED;
-        animd->ad_PlayerData->pp_PlayerFlags |= PRIVPROCF_ENABLED;
+        Signal((struct Task *)animd->ad_BufferProc, (1 << animd->ad_ProcessData->pp_BufferEnable));
+        Signal((struct Task *)animd->ad_PlayerProc, (1 << animd->ad_ProcessData->pp_PlaybackEnable));
     }
 
     return NULL;
@@ -1371,18 +1356,6 @@ IPTR DT_Stop(struct IClass *cl, struct Gadget *g, struct opSet *msg)
     }
     SetConductorState(animd->ad_Player, CONDSTATE_STOPPED, 0);
 
-    return NULL;
-}
-
-IPTR DT_LoadFrame(struct IClass *cl, struct Gadget *g, struct opSet *msg)
-{
-    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
-    return NULL;
-}
-
-IPTR DT_UnLoadFrame(struct IClass *cl, struct Gadget *g, struct opSet *msg)
-{
-    D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
     return NULL;
 }
 

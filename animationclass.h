@@ -28,51 +28,77 @@
 struct ProcessPrivate;
 BOOL ProcEnabled(struct ProcessPrivate *priv, volatile ULONG *flags, ULONG flag);
 
+struct AnimColor_Data
+{
+    struct ColorMap             *acd_ColorMap;
+    struct ColorRegister        *acd_ColorRegs;
+    ULONG			*acd_CRegs;
+    ULONG                       *acd_GRegs;
+
+    UWORD                       acd_NumColors;
+    UWORD                       acd_NumAlloc;
+
+    UBYTE			*acd_ColorTable[2];
+    UBYTE			*acd_Allocated;          /* pens we have actually allocated      */
+    ULONG                       acd_PenPrecison;         /* precision to use allocating pens     */
+};
+
+struct AnimFrame_Data
+{
+    struct SignalSemaphore      afd_AnimFramesLock;
+    struct List                 afd_AnimFrames;
+
+    UWORD                       afd_Frames;              /* # of frames                          */
+    UWORD                       afd_FrameCurrent;        /* # of current frame                   */
+    UWORD                       afd_FramesStep;          /* how much to skip back/fwd            */
+};
+
+struct AnimTimer_Data
+{
+    UWORD                       atd_FramesPerSec;        /* Playback rate                        */
+    UWORD                       atd_TicksPerFrame;       /* realtime.libraries tick frequency /
+                                                           ad_FramesPerSec */
+    UWORD                       atd_Tick;
+};
+
 struct Animation_Data
 {
-    char                        *ad_BaseName;
     ULONG                       ad_Flags;               /* object control flags                 */
-    UWORD                       ad_Frames;              /* # of frames                          */
-    UWORD                       ad_FrameCurrent;
-    UWORD                       ad_FramesPerSec;
-    UWORD                       ad_TicksPerFrame;       /* TICK_FREQ / ad_FramesPerSec */
-    UWORD                       ad_Tick;
-    struct BitMap               *ad_KeyFrame;
+    char                        *ad_BaseName;
+
+    struct Window               *ad_Window;
+
+    struct AnimFrame_Data       ad_FrameData;
+    struct AnimTimer_Data       ad_TimerData;
+
     struct BitMap               *ad_FrameBuffer;        /* currently displayed frame            */
-    UWORD                       ad_pad0;
-    UWORD                       ad_VertTop;
-    UWORD                       ad_VertTotal;
+    struct BitMap               *ad_KeyFrame;           /* animations key (first) frame         */
+
+    UWORD                       ad_VertTop;             /* Y offset of visible rectangle        */
+    UWORD                       ad_VertTotal;           
     UWORD                       ad_VertVis;
-    UWORD                       ad_HorizTop;
+    UWORD                       ad_HorizTop;            /* X offset of visible rectangle        */
     UWORD                       ad_HorizTotal;
     UWORD                       ad_HorizVis;
-    IPTR                        ad_ModeID;
-    struct BitMapHeader         ad_BitMapHeader;        /* objects embedded bitmap header       */
-    struct Gadget               *ad_Tapedeck;
-    UWORD                       ad_NumColors;
-    UWORD                       ad_NumAlloc;
-    struct Window               *ad_Window;
-    struct ColorMap             *ad_ColorMap;
-    struct ColorRegister        *ad_ColorRegs;
-    ULONG			*ad_CRegs;
-    ULONG                       *ad_GRegs;
-    UBYTE			*ad_ColorTable;
-    UBYTE			*ad_ColorTable2;
-    UBYTE			*ad_Allocated;          /* pens we have actually allocated      */
-    ULONG                       ad_PenPrecison;
-    struct Player               *ad_Player;
-    struct ProcessPrivate       *ad_PlayerData;
-    struct Process              *ad_BufferProc;         /* buffering process */
-    struct Process              *ad_PlayerProc;         /* playback process */
-    struct Hook                 ad_PlayerHook;
-    UBYTE                       ad_LoadFrames;          /* signal frames need to be loaded */
-    UBYTE                       ad_PlayerTick;          /* signal frames needs to change */
-    struct SignalSemaphore      ad_AnimFramesLock;
-    struct List                 ad_AnimFrames;
+
     UWORD                       ad_RenderLeft;
     UWORD                       ad_RenderTop;
     UWORD                       ad_RenderWidth;
     UWORD                       ad_RenderHeight;
+
+    IPTR                        ad_ModeID;
+    struct BitMapHeader         ad_BitMapHeader;        /* objects embedded bitmap header       */
+
+    struct AnimColor_Data       ad_ColorData;
+;
+    struct ProcessPrivate       *ad_ProcessData;
+    struct Process              *ad_BufferProc;         /* buffering process */
+    struct Process              *ad_PlayerProc;         /* playback process */
+    struct Player               *ad_Player;
+    struct Hook                 ad_PlayerHook;
+
+    struct Gadget               *ad_Tapedeck;
+
 };
 
 struct ProcessPrivate
@@ -81,11 +107,21 @@ struct ProcessPrivate
     struct Animation_Data       *pp_Data;
     char                        *pp_PlayBackName;
     char                        *pp_BufferingName;
-    struct SignalSemaphore      pp_FlagsLock;
     volatile ULONG              pp_PlayerFlags;
     volatile ULONG              pp_BufferFlags;
     ULONG                       pp_BufferFrames;       /* no of frames to buffer */
     ULONG                       pp_BufferLevel;        /* no of frames buffered */
+
+    ULONG                       pp_BufferSigMask;
+    UBYTE                       pp_BufferEnable;
+    UBYTE                       pp_BufferDisable;
+    UBYTE                       pp_BufferFill;
+    UBYTE                       pp_BufferPurge;
+
+    ULONG                       pp_PlaybackSigMask;
+    UBYTE                       pp_PlaybackEnable;
+    UBYTE                       pp_PlaybackDisable;
+    UBYTE                       pp_PlaybackTick;          /* signal frames needs to change */
 };
 
 #define PRIVPROCF_ENABLED       (1 << 0)
