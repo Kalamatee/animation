@@ -109,8 +109,9 @@ struct ProcessPrivate
     char                        *pp_BufferingName;
     volatile ULONG              pp_PlayerFlags;
     volatile ULONG              pp_BufferFlags;
-    ULONG                       pp_BufferFrames;       /* no of frames to buffer */
-    ULONG                       pp_BufferLevel;        /* no of frames buffered */
+    ULONG                       pp_BufferStep;         /* no of frames to try to load in one go */
+    ULONG                       pp_BufferFrames;       /* no of frames to buffer in total       */
+    ULONG                       pp_BufferLevel;        /* no of frames buffered                 */
 
     ULONG                       pp_BufferSigMask;
     UBYTE                       pp_BufferEnable;

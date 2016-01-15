@@ -164,6 +164,8 @@ IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
         animd->ad_ProcessData->pp_PlayerFlags = 0;
         animd->ad_ProcessData->pp_BufferFlags = 0;
 
+        animd->ad_ProcessData->pp_BufferStep = 2; // Try to load 2 frames at a time
+
         animd->ad_ProcessData->pp_BufferEnable = -1;
         animd->ad_ProcessData->pp_BufferDisable = -1;
         animd->ad_ProcessData->pp_BufferFill = -1;

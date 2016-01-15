@@ -3,7 +3,7 @@
     $Id$
 */
 #ifndef DEBUG
-#define DEBUG 0
+#define DEBUG 1
 #endif
 #include <aros/debug.h>
 
@@ -63,6 +63,11 @@ BOOL AllocBufferSignals(struct ProcessPrivate *priv)
     return FALSE;
 }
 
+BOOL DoFramePurge(struct AnimFrame *purgeFrame)
+{
+    return FALSE;
+}
+
 /*
     Process to handle loading/discarding (buffering) of  animation frames
     realtime.library player & playback thread will signal us when needed.
@@ -77,7 +82,7 @@ AROS_UFH3(void, bufferProc,
 
     struct ProcessPrivate *priv = FindTask(NULL)->tc_UserData;
     struct AnimFrame *curFrame = NULL, *lastFrame = NULL;
-    ULONG signal;
+    ULONG signal, bufferstep;
 
     D(bug("[animation.datatype/BUFFER]: %s()\n", __PRETTY_FUNCTION__));
 
@@ -92,11 +97,13 @@ AROS_UFH3(void, bufferProc,
         {
             D(bug("[animation.datatype/BUFFER]: %s: entering main loop ...\n", __PRETTY_FUNCTION__));
 
+            bufferstep = priv->pp_BufferStep;
+
             while (TRUE)
             {
                 priv->pp_BufferFlags &= ~PRIVPROCF_ACTIVE;
 
-                if ((priv->pp_BufferFlags & PRIVPROCF_ENABLED) &&
+                if ((bufferstep-- >= 1) && (priv->pp_BufferFlags & PRIVPROCF_ENABLED) &&
                     (priv->pp_BufferLevel < priv->pp_BufferFrames) &&
                     (priv->pp_BufferLevel < priv->pp_Data->ad_FrameData.afd_Frames))
                 {
@@ -105,6 +112,7 @@ AROS_UFH3(void, bufferProc,
                 }
                 else
                 {
+                    bufferstep = priv->pp_BufferStep;
                     D(bug("[animation.datatype/BUFFER]: %s: waiting ...\n", __PRETTY_FUNCTION__));
                     signal = Wait(priv->pp_BufferSigMask | SIGBREAKF_CTRL_C);
                 };
@@ -118,6 +126,18 @@ AROS_UFH3(void, bufferProc,
                     priv->pp_BufferFlags |= PRIVPROCF_ENABLED;
                 else if (signal & (1 << priv->pp_BufferDisable))
                     priv->pp_BufferFlags &= ~PRIVPROCF_ENABLED;
+
+                if ((priv->pp_BufferFlags & PRIVPROCF_ENABLED) && (signal & (1 <<priv->pp_BufferPurge)))
+                {
+                    struct Node *purgeFrame = NULL, *tmpFrame = NULL;
+
+                    D(bug("[animation.datatype/BUFFER]: %s: Purging Frames...\n", __PRETTY_FUNCTION__));
+                    ForeachNodeSafe(&priv->pp_Data->ad_FrameData.afd_AnimFrames, purgeFrame, tmpFrame)
+                    {
+                        if (DoFramePurge((struct AnimFrame *)purgeFrame))
+                            priv->pp_BufferLevel--;
+                    }
+                }
 
                 if ((priv->pp_BufferFlags & PRIVPROCF_ENABLED) && (signal & (1 <<priv->pp_BufferFill)))
                 {
@@ -161,6 +181,7 @@ AROS_UFH3(void, bufferProc,
                             curFrame = NULL;
                         }
                     }
+                    SetTaskPri((struct Task *)priv->pp_Data->ad_PlayerProc, 0);
                 }
             }
             FreeBufferSignals(priv);

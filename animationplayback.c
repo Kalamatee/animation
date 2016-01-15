@@ -2,8 +2,9 @@
     Copyright © 2015-2016, The AROS Development	Team. All rights reserved.
     $Id$
 */
+
 #ifndef DEBUG
-#define DEBUG 0
+#define DEBUG 1
 #endif
 #include <aros/debug.h>
 
@@ -190,7 +191,8 @@ AROS_UFH3(void, playerProc,
 
                     ReleaseSemaphore(&priv->pp_Data->ad_FrameData.afd_AnimFramesLock);
 
-                    if ((curFrame) && (curFrame->af_Frame.alf_BitMap))
+                    if ((curFrame) && (prevFrame != curFrame) &&
+                        (curFrame->af_Frame.alf_BitMap))
                     {
                         rendFrame->Source = curFrame->af_Frame.alf_BitMap;
                         D(bug("[animation.datatype/PLAY]: %s: Rendering Frame @ 0x%p\n", __PRETTY_FUNCTION__, curFrame));
@@ -207,7 +209,10 @@ AROS_UFH3(void, playerProc,
                     else
                     {
                         if ((priv->pp_Data->ad_BufferProc) && (priv->pp_BufferFill != -1))
+                        {
                             Signal((struct Task *)priv->pp_Data->ad_BufferProc, (1 << priv->pp_BufferFill));
+                            SetTaskPri((struct Task *)priv->pp_Data->ad_PlayerProc, -2);
+                        }
 
                         if ((prevFrame) && (prevFrame->af_Frame.alf_BitMap))
                         {
