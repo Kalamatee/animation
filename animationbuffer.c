@@ -2,8 +2,9 @@
     Copyright © 2015-2016, The AROS Development	Team. All rights reserved.
     $Id$
 */
+
 #ifndef DEBUG
-#define DEBUG 1
+#   define DEBUG 0
 #endif
 #include <aros/debug.h>
 
@@ -97,13 +98,13 @@ AROS_UFH3(void, bufferProc,
         {
             D(bug("[animation.datatype/BUFFER]: %s: entering main loop ...\n", __PRETTY_FUNCTION__));
 
-            bufferstep = priv->pp_BufferStep;
+            bufferstep = priv->pp_Data->ad_BufferStep;
 
             while (TRUE)
             {
                 priv->pp_BufferFlags &= ~PRIVPROCF_ACTIVE;
 
-                if ((bufferstep-- >= 1) && (priv->pp_BufferFlags & PRIVPROCF_ENABLED) &&
+                if ((bufferstep >= 1) && (priv->pp_BufferFlags & PRIVPROCF_ENABLED) &&
                     (priv->pp_BufferLevel < priv->pp_BufferFrames) &&
                     (priv->pp_BufferLevel < priv->pp_Data->ad_FrameData.afd_Frames))
                 {
@@ -112,7 +113,7 @@ AROS_UFH3(void, bufferProc,
                 }
                 else
                 {
-                    bufferstep = priv->pp_BufferStep;
+                    bufferstep = priv->pp_Data->ad_BufferStep;
                     D(bug("[animation.datatype/BUFFER]: %s: waiting ...\n", __PRETTY_FUNCTION__));
                     signal = Wait(priv->pp_BufferSigMask | SIGBREAKF_CTRL_C);
                 };
@@ -145,42 +146,52 @@ AROS_UFH3(void, bufferProc,
 
                     priv->pp_BufferFlags |= PRIVPROCF_ACTIVE;
 
-                    if ((curFrame) ||
-                        ((curFrame = AllocMem(sizeof(struct AnimFrame), MEMF_ANY)) != NULL))
+                    if (priv->pp_BufferLevel < priv->pp_Data->ad_FrameData.afd_Frames)
                     {
-                        D(bug("[animation.datatype/BUFFER]: %s: using AnimFrame @ 0x%p\n", __PRETTY_FUNCTION__, curFrame));
-
-                        curFrame->af_Frame.MethodID = ADTM_LOADFRAME;
-
-                        if (lastFrame)
+                        if ((curFrame) ||
+                            ((curFrame = AllocMem(sizeof(struct AnimFrame), MEMF_ANY)) != NULL))
                         {
-                            curFrame->af_Frame.alf_Frame = lastFrame->af_Frame.alf_Frame + 1;
-                            curFrame->af_Frame.alf_TimeStamp = lastFrame->af_Frame.alf_TimeStamp + 1;
-                        }
-                        else
-                        {
-                            curFrame->af_Frame.alf_Frame = 1;
-                            curFrame->af_Frame.alf_TimeStamp = 1;
-                        }
-                        curFrame->af_Frame.alf_BitMap = NULL;
-                        curFrame->af_Frame.alf_CMap = NULL;
-                        curFrame->af_Frame.alf_Sample = NULL;
-                        curFrame->af_Frame.alf_UserData = NULL;
+                            D(bug("[animation.datatype/BUFFER]: %s: using AnimFrame @ 0x%p\n", __PRETTY_FUNCTION__, curFrame));
 
-                        D(bug("[animation.datatype/BUFFER]: %s: Loading Frame #%d\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_Frame));
+                            curFrame->af_Frame.MethodID = ADTM_LOADFRAME;
 
-                        if (DoMethodA(priv->pp_Object, (Msg)&curFrame->af_Frame))
-                        {
-                            priv->pp_BufferLevel++;
-                            D(bug("[animation.datatype/BUFFER]: %s: Loaded! bitmap @ %p\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_BitMap));
-                            D(bug("[animation.datatype/BUFFER]: %s: frame #%d. stamp %d\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_Frame, curFrame->af_Frame.alf_TimeStamp));
-                            ObtainSemaphore(&priv->pp_Data->ad_FrameData.afd_AnimFramesLock);
-                            AddTail(&priv->pp_Data->ad_FrameData.afd_AnimFrames, &curFrame->af_Node);
-                            ReleaseSemaphore(&priv->pp_Data->ad_FrameData.afd_AnimFramesLock);
-                            lastFrame =  curFrame;
-                            curFrame = NULL;
+                            if (lastFrame)
+                            {
+                                curFrame->af_Frame.alf_Frame = lastFrame->af_Frame.alf_Frame + 1;
+                                curFrame->af_Frame.alf_TimeStamp = lastFrame->af_Frame.alf_TimeStamp + 1;
+                            }
+                            else
+                            {
+                                curFrame->af_Frame.alf_Frame = 0;
+                                curFrame->af_Frame.alf_TimeStamp = 0;
+                            }
+                            curFrame->af_Frame.alf_BitMap = NULL;
+                            curFrame->af_Frame.alf_CMap = NULL;
+                            curFrame->af_Frame.alf_Sample = NULL;
+                            curFrame->af_Frame.alf_UserData = NULL;
+
+                            D(bug("[animation.datatype/BUFFER]: %s: Loading Frame #%d\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_Frame));
+
+                            if (DoMethodA(priv->pp_Object, (Msg)&curFrame->af_Frame))
+                            {
+                                priv->pp_BufferLevel++;
+                                D(bug("[animation.datatype/BUFFER]: %s: Loaded! bitmap @ %p\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_BitMap));
+                                D(bug("[animation.datatype/BUFFER]: %s: frame #%d. stamp %d\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_Frame, curFrame->af_Frame.alf_TimeStamp));
+                                ObtainSemaphore(&priv->pp_Data->ad_FrameData.afd_AnimFramesLock);
+                                AddTail(&priv->pp_Data->ad_FrameData.afd_AnimFrames, &curFrame->af_Node);
+                                ReleaseSemaphore(&priv->pp_Data->ad_FrameData.afd_AnimFramesLock);
+                                if (curFrame->af_Frame.alf_Frame < (priv->pp_Data->ad_FrameData.afd_Frames - 1))
+                                    lastFrame =  curFrame;
+                                else
+                                    lastFrame =  NULL;
+                                curFrame = NULL;
+                            }
                         }
                     }
+
+                    if (bufferstep > 0)
+                        bufferstep = 1;
+
                     SetTaskPri((struct Task *)priv->pp_Data->ad_PlayerProc, 0);
                 }
             }

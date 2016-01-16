@@ -4,7 +4,7 @@
 */
 
 #ifndef DEBUG
-#define DEBUG 1
+#   define DEBUG 0
 #endif
 #include <aros/debug.h>
 
@@ -147,10 +147,6 @@ AROS_UFH3(void, playerProc,
                 priv->pp_PlayerFlags &= ~PRIVPROCF_ACTIVE;
 
                 signal = priv->pp_PlaybackSigMask | SIGBREAKF_CTRL_C;
-                D(
-                    if ((SetSignal(0,0) & signal) == 0)
-                        bug("** WAITING **\n");
-                    )
                 signal = Wait(signal);
 
                 D(bug("[animation.datatype/PLAY]: %s: signalled (%08x)\n", __PRETTY_FUNCTION__, signal));
@@ -195,6 +191,7 @@ AROS_UFH3(void, playerProc,
                         (curFrame->af_Frame.alf_BitMap))
                     {
                         rendFrame->Source = curFrame->af_Frame.alf_BitMap;
+                        frame = curFrame->af_Frame.alf_Frame;
                         D(bug("[animation.datatype/PLAY]: %s: Rendering Frame @ 0x%p\n", __PRETTY_FUNCTION__, curFrame));
                         D(bug("[animation.datatype/PLAY]: %s: #%d BitMap @ 0x%p\n", __PRETTY_FUNCTION__, curFrame->af_Frame.alf_Frame, curFrame->af_Frame.alf_BitMap));
                         if (curFrame->af_Frame.alf_CMap)

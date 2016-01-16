@@ -3,5 +3,7 @@
     $Id$
 */
 
-#define DEBUG 1
+#ifndef DEBUG
+#   define DEBUG 0
+#endif
 #include <aros/debug.h>

@@ -2,8 +2,9 @@
     Copyright © 2015-2016, The AROS Development	Team. All rights reserved.
     $Id$
 */
+
 #ifndef DEBUG
-#define DEBUG 0
+#   define DEBUG 0
 #endif
 #include <aros/debug.h>
 
@@ -52,6 +53,8 @@ extern AROS_UFP3(void, playerProc,
     AROS_UFPA(STRPTR, argPtr, A0),
     AROS_UFPA(ULONG, argSize, D0),
     AROS_UFPA(struct ExecBase *, SysBase, A6));
+
+extern void ReadENVPrefs(APTR, APTR);
 
 ADD2LIBS("realtime.library", 0, struct Library *, RealTimeBase);
 ADD2LIBS("gadgets/tapedeck.gadget", 0, struct Library *, TapeDeckBase);
@@ -157,14 +160,14 @@ IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
         animd->ad_ProcessData = AllocMem(sizeof(struct ProcessPrivate), MEMF_ANY);
         animd->ad_ProcessData->pp_Object = (Object *)g;
         animd->ad_ProcessData->pp_Data = animd;
-        animd->ad_ProcessData->pp_BufferFrames = 3 * animd->ad_TimerData.atd_FramesPerSec;
-        animd->ad_ProcessData->pp_BufferLevel = 0;
+
         InitSemaphore(&animd->ad_FrameData.afd_AnimFramesLock);
 
         animd->ad_ProcessData->pp_PlayerFlags = 0;
         animd->ad_ProcessData->pp_BufferFlags = 0;
 
-        animd->ad_ProcessData->pp_BufferStep = 2; // Try to load 2 frames at a time
+        animd->ad_ProcessData->pp_BufferFrames = animd->ad_BufferTime * animd->ad_TimerData.atd_FramesPerSec;
+        animd->ad_ProcessData->pp_BufferLevel = 0;
 
         animd->ad_ProcessData->pp_BufferEnable = -1;
         animd->ad_ProcessData->pp_BufferDisable = -1;
@@ -201,7 +204,7 @@ IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
                             NP_Output,          Output (),
                             NP_CloseOutput,     FALSE,
                             NP_UserData,        (IPTR)animd->ad_ProcessData,
-                            NP_StackSize,       400000,
+                            NP_StackSize,       animd->ad_ProcStack,
                             TAG_DONE);
         while (!(animd->ad_ProcessData->pp_BufferFlags & PRIVPROCF_RUNNING))
         {
@@ -222,7 +225,7 @@ IPTR DT_InitPlayer(struct IClass *cl, struct Gadget *g, Msg msg)
                             NP_Output,          Output (),
                             NP_CloseOutput,     FALSE,
                             NP_UserData,        (IPTR)animd->ad_ProcessData,
-                            NP_StackSize,       400000,
+                            NP_StackSize,       animd->ad_ProcStack,
                             TAG_DONE);
         while (!(animd->ad_ProcessData->pp_PlayerFlags & PRIVPROCF_RUNNING))
         {
@@ -745,7 +748,6 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
         { TAG_DONE,     0}
     };
     struct TagItem *tag;
-    IPTR rv = 0;
 
     D(bug("[animation.datatype]: %s()\n", __PRETTY_FUNCTION__));
 
@@ -818,7 +820,7 @@ IPTR DT_SetMethod(struct IClass *cl, struct Gadget *g, struct opSet *msg)
             animd->ad_TimerData.atd_TicksPerFrame = (ANIMPLAYER_TICKFREQ / animd->ad_TimerData.atd_FramesPerSec);
             if (animd->ad_ProcessData)
             {
-                animd->ad_ProcessData->pp_BufferFrames = 3 * animd->ad_TimerData.atd_FramesPerSec;
+                animd->ad_ProcessData->pp_BufferFrames = animd->ad_BufferTime * animd->ad_TimerData.atd_FramesPerSec;
             }
             break;
 
@@ -949,7 +951,7 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
     if (g)
     {
         D(bug("[animation.datatype] %s: Created object 0x%p\n", __PRETTY_FUNCTION__, g));
-
+        D(bug("[animation.datatype] %s: for '%s'\n", __PRETTY_FUNCTION__, OCLASS((Object *)g)->cl_ID));
         animd = (struct Animation_Data *) INST_DATA(cl, g);
 
         NewList(&animd->ad_FrameData.afd_AnimFrames);
@@ -961,6 +963,9 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
         animd->ad_TimerData.atd_FramesPerSec = 60;
         animd->ad_TimerData.atd_TicksPerFrame = ANIMPLAYER_TICKFREQ / animd->ad_TimerData.atd_FramesPerSec;
         animd->ad_ColorData.acd_PenPrecison = PRECISION_IMAGE;
+        animd->ad_ProcStack = 8192;
+        animd->ad_BufferStep = 2; // Try to load 2 frames at a time
+        animd->ad_BufferTime = 3;
 
         if (msg->ops_AttrList)
         {
@@ -968,9 +973,11 @@ IPTR DT_NewMethod(struct IClass *cl, Object *o, struct opSet *msg)
             DT_SetMethod(cl, g, msg);
         }
 
-        D(bug("[animation.datatype] %s: Prepare controls.. \n", __PRETTY_FUNCTION__));
-        /* create a tapedeck gadget */
+        ReadENVPrefs(g, animd);
 
+        D(bug("[animation.datatype] %s: Prepare controls.. \n", __PRETTY_FUNCTION__));
+
+        /* create a tapedeck gadget */
         if ((animd->ad_Tapedeck = NewObjectA(NULL, "tapedeck.gadget", tdtags)) != NULL)
         {
             D(bug("[animation.datatype] %s: Tapedeck @ 0x%p\n", __PRETTY_FUNCTION__, animd->ad_Tapedeck));

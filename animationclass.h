@@ -90,7 +90,8 @@ struct Animation_Data
     struct BitMapHeader         ad_BitMapHeader;        /* objects embedded bitmap header       */
 
     struct AnimColor_Data       ad_ColorData;
-;
+
+    IPTR                        ad_ProcStack;
     struct ProcessPrivate       *ad_ProcessData;
     struct Process              *ad_BufferProc;         /* buffering process */
     struct Process              *ad_PlayerProc;         /* playback process */
@@ -98,7 +99,8 @@ struct Animation_Data
     struct Hook                 ad_PlayerHook;
 
     struct Gadget               *ad_Tapedeck;
-
+    ULONG                       ad_BufferTime;         /* (prefs) how many seconds to buffer  */
+    ULONG                       ad_BufferStep;         /* (prefs) no of frames to try to load in one go */
 };
 
 struct ProcessPrivate
@@ -109,7 +111,6 @@ struct ProcessPrivate
     char                        *pp_BufferingName;
     volatile ULONG              pp_PlayerFlags;
     volatile ULONG              pp_BufferFlags;
-    ULONG                       pp_BufferStep;         /* no of frames to try to load in one go */
     ULONG                       pp_BufferFrames;       /* no of frames to buffer in total       */
     ULONG                       pp_BufferLevel;        /* no of frames buffered                 */
 
